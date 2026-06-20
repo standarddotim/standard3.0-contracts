@@ -80,6 +80,12 @@ interface IMatchingEngine {
         uint16 orderHistoryId;
     }
 
+    struct LimitOrderState {
+        uint256 lmp;
+        uint32 i;
+        uint32 prevI;
+    }
+
     // admin functions
     function setFeeTo(address feeTo_) external returns (bool success);
 

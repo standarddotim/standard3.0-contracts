@@ -153,151 +153,71 @@ library ExchangeLinkedList {
     }
 
     function _delete(PriceLinkedList storage self, bool isBid, uint256 price) internal returns (bool) {
-        // traverse the list
         if (price == 0) {
-            // revert ZeroPrice(price);
             return false;
         }
 
         if (isBid) {
             uint256 last = 0;
             uint256 head = self.bidHead;
-            // insert bid price to the linked list
-            // if the list is empty
+            // Bid list is descending (bidHead is highest). price must be <= bidHead.
             if (head == 0 || price > head) {
-                // revert NoHeadBelow(isBid, head);
                 return false;
             }
-            while (head != 0 && price > head) {
-                uint256 next = self.bidPrices[head];
-                // price is below head bid price, traversing to lower end
-                if (price < next) {
-                    // Keep traversing
-                    head = self.bidPrices[head];
-                    last = next;
+            // Delete head node
+            if (head == price) {
+                self.bidHead = self.bidPrices[head];
+                delete self.bidPrices[head];
+                return true;
+            }
+            // Traverse descending list to find price
+            last = head;
+            head = self.bidPrices[head];
+            while (head != 0) {
+                if (head == price) {
+                    self.bidPrices[last] = self.bidPrices[head];
+                    delete self.bidPrices[head];
+                    return true;
                 }
-                // price is above lowest bid price, and the search price is head which is right before next
-                else if (price > next) {
-                    // the search price is at the end
-                    if (next == 0) {
-                        // if there is only one price left, check if it is the price we are looking for
-                        if (head == price) {
-                            // remove price at the end
-                            self.bidPrices[last] = 0;
-                            delete self.bidPrices[head];
-                            // if the price is at the foremost head, set foremost head as 0.
-                            if (self.bidHead == price) {
-                                self.bidHead = 0;
-                            }
-                            return true;
-                        }
-                        // Price does not exist in price list
-                        // revert PriceOutOfRange(head, price);
-                        return false;
-                    }
-                    // the search price is right above the next price which is not zero
-                    else {
-                        if (head == price) {
-                            // if last price did exist
-                            if (last != 0) {
-                                self.bidPrices[last] = next;
-                                delete self.bidPrices[head];
-                                return true;
-                            }
-                            // if current price is head
-                            else {
-                                self.bidHead = next;
-                                delete self.bidPrices[head];
-                                return true;
-                            }
-                        }
-                    }
-                    // Price does not exist within range of prices
-                    // revert PriceNoneInRange(head, price);
+                // Descended below target — price not in list
+                if (head < price) {
                     return false;
                 }
-                // price is above lowest bid price, and the search price is next price
-                else {
-                    // price is already included in the queue as it is equal to next. price exists in the orderbook
-                    // End traversal as there is no need to traverse further
-                    // remove price in next, connect next next to the head
-                    self.bidPrices[head] = self.bidPrices[next];
-                    delete self.bidPrices[next];
-                    return true;
-                }
+                last = head;
+                head = self.bidPrices[head];
             }
-        }
-        // insert ask price to the linked list
-        else {
+            return false;
+        } else {
             uint256 last = 0;
             uint256 head = self.askHead;
-            // insert order to the linked list
-            // if the list is empty and price is the lowest ask
+            // Ask list is ascending (askHead is lowest). price must be >= askHead.
             if (head == 0 || price < head) {
-                // revert NoHeadBelow(isBid, head);
                 return false;
             }
-            // traverse the list
-            while (head != 0 && price < head) {
-                uint256 next = self.askPrices[head];
-                // price is above head price, traversing to end
-                if (price > next) {
-                    // the price is at the end of range
-                    if (next == 0) {
-                        // if there is only one price left, check if it is the price we are looking for
-                        if (head == price) {
-                            self.askPrices[last] = 0;
-                            delete self.askPrices[head];
-                            // if the price is at the foremost head, set foremost head as 0.
-                            if (self.askHead == price) {
-                                self.askHead = 0;
-                            }
-                            return true;
-                        }
-                        // Price does not exist in price list
-                        //revert PriceOutOfRange(head, price);
-                        return false;
-                    }
-                    // Keep traversing
-                    head = self.askPrices[head];
-                    last = next;
-                }
-                // price is below highest ask, and the search price is head which is right before next
-                else if (price < next) {
-                    // Price does exist within range of prices
-                    if (head == price) {
-                        // price is already included in the queue as it is equal to next
-                        // End traversal as there is no need to traverse further
-                        // if last price did exist
-                        if (last != 0) {
-                            self.askPrices[last] = self.askPrices[next];
-                            delete self.askPrices[head];
-                            return true;
-                        }
-                        // if current price is head
-                        else {
-                            self.askHead = self.askPrices[next];
-                            delete self.askPrices[head];
-                            return true;
-                        }
-                    } else {
-                        // revert PriceNoneInRange(head, price);
-                        return false;
-                    }
-                    //return false;
-                }
-                // price is below highest ask, and the search price is next price
-                else {
-                    // price is already included in the queue as it is equal to next
-                    // End traversal as there is no need to traverse further
-                    self.askPrices[head] = self.askPrices[next];
-                    delete self.askPrices[next];
+            // Delete head node
+            if (head == price) {
+                self.askHead = self.askPrices[head];
+                delete self.askPrices[head];
+                return true;
+            }
+            // Traverse ascending list to find price
+            last = head;
+            head = self.askPrices[head];
+            while (head != 0) {
+                if (head == price) {
+                    self.askPrices[last] = self.askPrices[head];
+                    delete self.askPrices[head];
                     return true;
                 }
+                // Ascended past target — price not in list
+                if (head > price) {
+                    return false;
+                }
+                last = head;
+                head = self.askPrices[head];
             }
+            return false;
         }
-
-        return true;
     }
 
     // show n prices shown in the orderbook

@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"forge test --match-contract InfiniteLoopMatchingTest -vv 2>&1\",\"timeout\":180000}",
+  "error": "Exit code 1\nCompiling 140 files with Solc 0.8.24\nSolc 0.8.24 finished in 53.81s\nCompiler run successful with warnings:\nWarning (3420): Source file does not specify required compiler version! Consider adding \"pragma solidity ^0.8.24;\"\n--> src/incentive/interfaces/IProtocol.sol\n\nWarning (8760): This declaration has the same name as another declaration.\n   --> src/futures/PerpFutures.sol:200:33:\n    |\n200 |     function setDefaultLeverage(uint32 long, uint32 short) external returns (bool success) {...",
+  "timestamp": "2026-06-20T13:45:15.094Z",
+  "retry_count": 1
+}

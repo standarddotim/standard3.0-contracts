@@ -1,0 +1,189 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1781957775904,
+  "projectRoot": "/home/hskan/hskang9/standarddotim/standard3.0-contracts",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "yarn",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "lib",
+      "src",
+      "test"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "audits": {
+      "path": "audits",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1781957775895,
+      "keyFiles": []
+    },
+    "cache": {
+      "path": "cache",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1781957775895,
+      "keyFiles": [
+        "solidity-files-cache.json",
+        "test-failures"
+      ]
+    },
+    "lib": {
+      "path": "lib",
+      "purpose": "Library code",
+      "fileCount": 0,
+      "lastAccessed": 1781957775899,
+      "keyFiles": []
+    },
+    "media": {
+      "path": "media",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1781957775900,
+      "keyFiles": [
+        "components_overview.png",
+        "defi3.0.png",
+        "overview.jpg",
+        "standard_profile.png"
+      ]
+    },
+    "out": {
+      "path": "out",
+      "purpose": "Build output",
+      "fileCount": 0,
+      "lastAccessed": 1781957775900,
+      "keyFiles": []
+    },
+    "script": {
+      "path": "script",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1781957775901,
+      "keyFiles": [
+        "Multicall3.sol"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 1,
+      "lastAccessed": 1781957775901,
+      "keyFiles": [
+        "deploy.md"
+      ]
+    },
+    "test": {
+      "path": "test",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1781957775901,
+      "keyFiles": []
+    },
+    "test/utils": {
+      "path": "test/utils",
+      "purpose": "Utility functions",
+      "fileCount": 1,
+      "lastAccessed": 1781957775903,
+      "keyFiles": [
+        "Utils.sol"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/exchange/MatchingEngine.sol",
+      "accessCount": 26,
+      "lastAccessed": 1781965008436,
+      "type": "file"
+    },
+    {
+      "path": "src/exchange/orderbooks/Orderbook.sol",
+      "accessCount": 8,
+      "lastAccessed": 1781964507315,
+      "type": "file"
+    },
+    {
+      "path": "src/exchange/libraries/ExchangeOrderbook.sol",
+      "accessCount": 5,
+      "lastAccessed": 1781964394805,
+      "type": "file"
+    },
+    {
+      "path": "src/exchange/libraries/ExchangeLinkedList.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781964394254,
+      "type": "file"
+    },
+    {
+      "path": "src/exchange/interfaces/IMatchingEngine.sol",
+      "accessCount": 3,
+      "lastAccessed": 1781963410544,
+      "type": "file"
+    },
+    {
+      "path": "foundry.toml",
+      "accessCount": 3,
+      "lastAccessed": 1781963434953,
+      "type": "file"
+    },
+    {
+      "path": "test/exchange/orderbook/InfiniteLoopMatchingTest.t.sol",
+      "accessCount": 2,
+      "lastAccessed": 1781963246104,
+      "type": "file"
+    },
+    {
+      "path": "test/exchange/orderbook/LoopOutOfGas.t.sol",
+      "accessCount": 1,
+      "lastAccessed": 1781958188054,
+      "type": "file"
+    },
+    {
+      "path": "test/exchange/OrderbookBaseSetup.sol",
+      "accessCount": 1,
+      "lastAccessed": 1781958188690,
+      "type": "file"
+    },
+    {
+      "path": "src/exchange/orderbooks/OrderbookFactory.sol",
+      "accessCount": 1,
+      "lastAccessed": 1781963987704,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

@@ -1697,13 +1697,16 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         uint16 orderHistoryId
     ) internal returns (uint256 remaining, uint256 bidHead, uint256 askHead) {
         remaining = amount;
-        uint256 lmp = IOrderbook(pair).lmp();
+        LimitOrderState memory state = LimitOrderState({
+            lmp: IOrderbook(pair).lmp(),
+            i: 0,
+            prevI: 0
+        });
         bidHead = IOrderbook(pair).clearEmptyHead(true);
         askHead = IOrderbook(pair).clearEmptyHead(false);
-        uint32 i = 0;
         // In LimitBuy
         if (isBid) {
-            if (lmp != 0) {
+            if (state.lmp != 0) {
                 if (askHead != 0 && limitPrice < askHead) {
                     return (remaining, bidHead, askHead);
                 } else if (askHead == 0) {
@@ -1712,10 +1715,11 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
             }
             // check if there is any matching ask order until matching ask order price is lower than the limit bid Price
             while (
-                remaining > 0 && askHead != 0 && askHead <= limitPrice && i < n
+                remaining > 0 && askHead != 0 && askHead <= limitPrice && state.i < n
             ) {
-                lmp = askHead;
-                (remaining, i) = _matchAt(
+                state.lmp = askHead;
+                state.prevI = state.i;
+                (remaining, state.i) = _matchAt(
                     MatchAtInput({
                         pair: pair,
                         give: give,
@@ -1724,13 +1728,12 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
                         amount: remaining,
                         total: amount,
                         price: askHead,
-                        i: i,
+                        i: state.i,
                         n: n,
                         orderHistoryId: orderHistoryId
                     })
                 );
-                // i == 0 when orders are all empty and only head price is left
-                askHead = i == 0 ? 0 : IOrderbook(pair).clearEmptyHead(false);
+                askHead = (state.i == state.prevI) ? 0 : IOrderbook(pair).clearEmptyHead(false);
             }
             // update heads
             bidHead = IOrderbook(pair).clearEmptyHead(true);
@@ -1738,7 +1741,7 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         // In LimitSell
         else {
             // check limit ask price is within 20% spread of last matched price
-            if (lmp != 0) {
+            if (state.lmp != 0) {
                 if (bidHead != 0 && limitPrice > bidHead) {
                     return (remaining, bidHead, askHead);
                 } else if (bidHead == 0) {
@@ -1746,10 +1749,11 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
                 }
             }
             while (
-                remaining > 0 && bidHead != 0 && bidHead >= limitPrice && i < n
+                remaining > 0 && bidHead != 0 && bidHead >= limitPrice && state.i < n
             ) {
-                lmp = bidHead;
-                (remaining, i) = _matchAt(
+                state.lmp = bidHead;
+                state.prevI = state.i;
+                (remaining, state.i) = _matchAt(
                     MatchAtInput({
                         pair: pair,
                         give: give,
@@ -1758,21 +1762,20 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
                         amount: remaining,
                         total: amount,
                         price: bidHead,
-                        i: i,
+                        i: state.i,
                         n: n,
                         orderHistoryId: orderHistoryId
                     })
                 );
-                // i == 0 when orders are all empty and only head price is left
-                bidHead = i == 0 ? 0 : IOrderbook(pair).clearEmptyHead(true);
+                bidHead = (state.i == state.prevI) ? 0 : IOrderbook(pair).clearEmptyHead(true);
             }
             // update heads
             askHead = IOrderbook(pair).clearEmptyHead(false);
         }
         // set new market price as the orders are matched
-        if (lmp != 0) {
-            IOrderbook(pair).setLmp(lmp);
-            emit NewMarketPrice(pair, lmp, isBid);
+        if (state.lmp != 0) {
+            IOrderbook(pair).setLmp(state.lmp);
+            emit NewMarketPrice(pair, state.lmp, isBid);
         }
 
         return (remaining, bidHead, askHead); // return bidHead, and askHead
@@ -1803,15 +1806,14 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         address recipient
     ) internal returns (uint32 id) {
         if (remaining > 0) {
-            address stopTo = isMaker ? pair : recipient;
-            TransferHelper.safeTransfer(
-                isBid ? quote : base,
-                stopTo,
-                remaining
-            );
-            if (isMaker) {
+            // If isMaker but remaining converts to zero (dust after partial matching),
+            // refund to recipient silently rather than placing an unexecutable maker order.
+            if (isMaker && _convert(pair, price, remaining, !isBid) > 0) {
+                TransferHelper.safeTransfer(isBid ? quote : base, pair, remaining);
                 id = _makeOrder(pair, remaining, price, isBid, recipient);
                 return id;
+            } else {
+                TransferHelper.safeTransfer(isBid ? quote : base, recipient, remaining);
             }
         }
     }
