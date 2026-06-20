@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-06-20T16:17:36.758Z",
+  "updatedAt": "2026-06-20T20:07:36.932Z",
   "missions": [
     {
       "id": "session:00085dae-6760-4ce4-aaf7-c46c2fa9d21a:none",
@@ -232,6 +232,142 @@
           "agent": "tracer:af2344b",
           "detail": "completed",
           "sourceKey": "session-stop:aa2b9d826dc7c31b6"
+        }
+      ]
+    },
+    {
+      "id": "session:aa8b0ede-ae84-48d5-8e9e-1d087a39465c:none",
+      "source": "session",
+      "name": "none",
+      "objective": "Session mission",
+      "createdAt": "2026-06-20T19:59:10.936Z",
+      "updatedAt": "2026-06-20T20:07:36.932Z",
+      "status": "done",
+      "workerCount": 1,
+      "taskCounts": {
+        "total": 1,
+        "pending": 0,
+        "blocked": 0,
+        "inProgress": 0,
+        "completed": 1,
+        "failed": 0
+      },
+      "agents": [
+        {
+          "name": "security-reviewer:a373a30",
+          "role": "security-reviewer",
+          "ownership": "a373a306d1697ff4c",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-06-20T20:07:36.932Z"
+        }
+      ],
+      "timeline": [
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:02:16.756Z",
+          "at": "2026-06-20T20:02:16.756Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:02:20.322Z",
+          "at": "2026-06-20T20:02:20.322Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-start:a373a306d1697ff4c:2026-06-20T20:02:29.089Z",
+          "at": "2026-06-20T20:02:29.089Z",
+          "kind": "update",
+          "agent": "security-reviewer:a373a30",
+          "detail": "started security-reviewer:a373a30",
+          "sourceKey": "session-start:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:03:26.043Z",
+          "at": "2026-06-20T20:03:26.043Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:03:33.321Z",
+          "at": "2026-06-20T20:03:33.321Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:03:38.407Z",
+          "at": "2026-06-20T20:03:38.407Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:03:42.020Z",
+          "at": "2026-06-20T20:03:42.020Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:03:44.772Z",
+          "at": "2026-06-20T20:03:44.772Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:03:48.862Z",
+          "at": "2026-06-20T20:03:48.862Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:03:50.694Z",
+          "at": "2026-06-20T20:03:50.694Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:03:52.404Z",
+          "at": "2026-06-20T20:03:52.404Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a373a306d1697ff4c:2026-06-20T20:03:54.237Z",
+          "at": "2026-06-20T20:03:54.237Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a373a306d1697ff4c"
+        },
+        {
+          "id": "session-stop:a2531c4a0975772d1:2026-06-20T20:07:36.932Z",
+          "at": "2026-06-20T20:07:36.932Z",
+          "kind": "completion",
+          "agent": "security-reviewer:a373a30",
+          "detail": "completed",
+          "sourceKey": "session-stop:a2531c4a0975772d1"
         }
       ]
     }
