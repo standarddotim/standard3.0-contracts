@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"git stash pop\"}",
-  "error": "Exit code 1\nerror: Your local changes to the following files would be overwritten by merge:\n\t.omc/state/hud-stdin-cache.json\nPlease commit your changes or stash them before you merge.\nAborting\nOn branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   .omc/state/hud-stdin-cache.json\n\nUntracked files:\n  (use \"git add <f...",
-  "timestamp": "2026-06-20T14:26:56.396Z",
-  "retry_count": 1
+  "tool_input_preview": "{\"command\":\"bash scripts/deploy-exchange.sh --chain ethereum --mode lib-only --dry-run 2>&1\"}",
+  "error": "Exit code 1\n\n\u001b[1m╔══════════════════════════════════════════════════╗\u001b[0m\n\u001b[1m║   MatchingEngine Deployment — ethereum                      ║\u001b[0m\n\u001b[1m╚══════════════════════════════════════════════════╝\u001b[0m\n\n\u001b[0;36m[info]\u001b[0m  Chain:   ethereum\n\u001b[0;36m[info]\u001b[0m  Mode:    lib-only\n\u001b[0;36m[info]\u001b[0m  Script:  script/exchange/Ethereum.s.sol:DeployexchangeMainnetsrc\n\u001b[0;36m[info]\u001b[0m  RPC env: ETHEREUM_RPC_URL\n\u001b[1;33m[warn]\u001b[0m  DRY RUN — no transactions will be broadcast\n\n\u001b[0;36m[info]\u001b[0m  Deploy...",
+  "timestamp": "2026-06-20T17:16:08.091Z",
+  "retry_count": 5
 }

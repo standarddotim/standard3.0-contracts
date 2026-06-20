@@ -287,6 +287,18 @@ contract Orderbook is IOrderbook, Initializable {
             ? _bidOrders._getOrder(orderId)
             : _askOrders._getOrder(orderId);
         required = convert(price, order.depositAmount, !isBid);
+        if (required == 0) {
+            // Dust order: deposit amount converts to zero in the taker's asset.
+            // Remove from queue and refund the maker so matching can continue cleanly.
+            uint256 deletePrice = isBid
+                ? _bidOrders._deleteOrder(orderId)
+                : _askOrders._deleteOrder(orderId);
+            if (deletePrice != 0) {
+                priceLists._delete(isBid, price);
+            }
+            _sendFunds(isBid ? pair.quote : pair.base, order.owner, order.depositAmount, false, false);
+            return (0, 0, true);
+        }
         if (required <= remaining) {
             isBid ? _bidOrders._fpop(price) : _askOrders._fpop(price);
             if (isEmpty(isBid, price)) {

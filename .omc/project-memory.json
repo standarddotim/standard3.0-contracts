@@ -126,26 +126,32 @@
   "hotPaths": [
     {
       "path": "src/exchange/MatchingEngine.sol",
-      "accessCount": 37,
-      "lastAccessed": 1781965520404,
+      "accessCount": 38,
+      "lastAccessed": 1781975967373,
       "type": "file"
     },
     {
       "path": "src/exchange/orderbooks/Orderbook.sol",
-      "accessCount": 8,
-      "lastAccessed": 1781964507315,
+      "accessCount": 15,
+      "lastAccessed": 1781979422887,
+      "type": "file"
+    },
+    {
+      "path": "scripts/deploy-exchange.sh",
+      "accessCount": 10,
+      "lastAccessed": 1781975962330,
       "type": "file"
     },
     {
       "path": "src/exchange/libraries/ExchangeOrderbook.sol",
-      "accessCount": 5,
-      "lastAccessed": 1781964394805,
+      "accessCount": 8,
+      "lastAccessed": 1781977923913,
       "type": "file"
     },
     {
       "path": "src/exchange/libraries/ExchangeLinkedList.sol",
-      "accessCount": 4,
-      "lastAccessed": 1781964394254,
+      "accessCount": 6,
+      "lastAccessed": 1781979492699,
       "type": "file"
     },
     {
@@ -203,15 +209,21 @@
       "type": "file"
     },
     {
-      "path": "src/exchange/interfaces/IMatchingEngine.sol",
-      "accessCount": 3,
-      "lastAccessed": 1781963410544,
+      "path": "foundry.toml",
+      "accessCount": 4,
+      "lastAccessed": 1781975576926,
       "type": "file"
     },
     {
-      "path": "foundry.toml",
+      "path": "test/exchange/orderbook/LoopOutOfGas.t.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781978124597,
+      "type": "file"
+    },
+    {
+      "path": "src/exchange/interfaces/IMatchingEngine.sol",
       "accessCount": 3,
-      "lastAccessed": 1781963434953,
+      "lastAccessed": 1781963410544,
       "type": "file"
     },
     {
@@ -222,20 +234,20 @@
     },
     {
       "path": "test/exchange/orderbook/InfiniteLoopMatchingTest.t.sol",
-      "accessCount": 2,
-      "lastAccessed": 1781963246104,
-      "type": "file"
-    },
-    {
-      "path": "test/exchange/orderbook/LoopOutOfGas.t.sol",
-      "accessCount": 1,
-      "lastAccessed": 1781958188054,
+      "accessCount": 3,
+      "lastAccessed": 1781978124158,
       "type": "file"
     },
     {
       "path": "test/exchange/OrderbookBaseSetup.sol",
-      "accessCount": 1,
-      "lastAccessed": 1781958188690,
+      "accessCount": 3,
+      "lastAccessed": 1781979414743,
+      "type": "file"
+    },
+    {
+      "path": "src/exchange/libraries/MatchingLib.sol",
+      "accessCount": 2,
+      "lastAccessed": 1781975975365,
       "type": "file"
     },
     {
@@ -245,9 +257,15 @@
       "type": "file"
     },
     {
-      "path": "src/exchange/libraries/MatchingLib.sol",
+      "path": "src/security/Initializable.sol",
       "accessCount": 1,
-      "lastAccessed": 1781965463504,
+      "lastAccessed": 1781979492274,
+      "type": "file"
+    },
+    {
+      "path": "test/exchange/orderbook/FixesTest.t.sol",
+      "accessCount": 1,
+      "lastAccessed": 1781979889807,
       "type": "file"
     }
   ],

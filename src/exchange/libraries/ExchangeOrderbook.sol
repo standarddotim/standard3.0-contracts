@@ -128,7 +128,6 @@ library ExchangeOrderbook {
         uint32 last = 0;
         uint32 head = self.head[price];
         uint32 next;
-        uint16 i;
         mapping(uint32 => uint32) storage list = self.list[price];
         // delete id in the order linked list
         if (head == id) {
@@ -145,7 +144,6 @@ library ExchangeOrderbook {
                 }
                 last = head;
                 head = next;
-                ++i;
             }
         }
         // delete order
