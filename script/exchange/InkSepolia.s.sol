@@ -12,6 +12,7 @@ import {Multicall3} from "../Multicall3.sol";
 import {TokenDispenser} from "../../src/exchange/airdrops/TokenDispenser.sol";
 import {ExchangeOrderbook} from "../../src/exchange/libraries/ExchangeOrderbook.sol";
 import {TransferHelper} from "../../src/exchange/libraries/TransferHelper.sol";
+import {MatchingLib} from "../../src/exchange/libraries/MatchingLib.sol";
 import {STNDXP} from "../../src/point/STNDXP.sol";
 import {PointFarm} from "../../src/point/PointFarm.sol";
 import {Pass} from "../../src/point/Pass.sol";
@@ -24,6 +25,15 @@ contract Deployer is Script {
     function _setDeployer() internal {
         uint256 deployerPrivateKey = vm.envUint("LINEA_TESTNET_DEPLOYER_KEY");
         vm.startBroadcast(deployerPrivateKey);
+    }
+}
+
+contract DeployMatchingLib is Deployer {
+    function run() external {
+        _setDeployer();
+        address lib = deployCode("MatchingLib.sol:MatchingLib");
+        console.log("MatchingLib:", lib);
+        vm.stopBroadcast();
     }
 }
 
@@ -84,6 +94,8 @@ contract DeployExchangeMainnetContracts is Deployer {
 
     function run() external {
         _setDeployer();
+        address matchingLib = deployCode("MatchingLib.sol:MatchingLib");
+        console.log("MatchingLib:", matchingLib);
         OrderbookFactory orderbookFactory = new OrderbookFactory();
         MatchingEngine matchingEngine = new MatchingEngine();
 

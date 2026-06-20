@@ -12,6 +12,7 @@ import {Multicall3} from "../Multicall3.sol";
 import {TokenDispenser} from "../../src/exchange/airdrops/TokenDispenser.sol";
 import {ExchangeOrderbook} from "../../src/exchange/libraries/ExchangeOrderbook.sol";
 import {TransferHelper} from "../../src/exchange/libraries/TransferHelper.sol";
+import {MatchingLib} from "../../src/exchange/libraries/MatchingLib.sol";
 
 contract Deployer is Script {
     function _setDeployer() internal {
@@ -45,6 +46,8 @@ contract DeployexchangeMainnetsrc is Deployer {
 
     function run() external {
         _setDeployer();
+        address matchingLib = deployCode("MatchingLib.sol:MatchingLib");
+        console.log("MatchingLib:", matchingLib);
         OrderbookFactory orderbookFactory = new OrderbookFactory();
         MatchingEngine matchingEngine = new MatchingEngine();
 

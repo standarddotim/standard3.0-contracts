@@ -9,6 +9,7 @@ import {IWETH} from "./interfaces/IWETH.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IMatchingEngine} from "./interfaces/IMatchingEngine.sol";
+import {MatchingLib} from "./libraries/MatchingLib.sol";
 
 interface IProtocol {
     function feeOf(
@@ -1584,98 +1585,6 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     }
 
     /**
-     * @dev Match bid if `isBid` is true, match ask if `isBid` is false.
-     */
-    function _matchAt(
-        MatchAtInput memory matchAtInput
-    ) internal returns (uint256 remaining, uint32 k) {
-        if (matchAtInput.n > maxMatches) {
-            revert TooManyMatches(matchAtInput.n);
-        }
-        remaining = matchAtInput.amount;
-        while (
-            remaining > 0 &&
-            !IOrderbook(matchAtInput.pair).isEmpty(
-                !matchAtInput.isBid,
-                matchAtInput.price
-            ) &&
-            matchAtInput.i < matchAtInput.n
-        ) {
-            // fpop OrderLinkedList by price, if ask you get bid order, if bid you get ask order. Get quote asset on bid order on buy, base asset on ask order on sell
-            (uint32 orderId, uint256 required, bool clear) = IOrderbook(
-                matchAtInput.pair
-            ).fpop(!matchAtInput.isBid, matchAtInput.price, remaining);
-            // order exists, and amount is not 0
-            if (remaining <= required) {
-                // execute order
-                TransferHelper.safeTransfer(
-                    matchAtInput.give,
-                    matchAtInput.pair,
-                    remaining
-                );
-                OrderMatch memory orderMatch = IOrderbook(matchAtInput.pair)
-                    .execute(
-                        orderId,
-                        !matchAtInput.isBid,
-                        matchAtInput.recipient,
-                        remaining,
-                        clear
-                    );
-                // emit event order matched
-                emit OrderMatched(
-                    matchAtInput.pair,
-                    matchAtInput.orderHistoryId,
-                    orderId,
-                    matchAtInput.isBid,
-                    matchAtInput.price,
-                    matchAtInput.total,
-                    clear,
-                    orderMatch
-                );
-                // end loop as remaining is 0
-                return (0, matchAtInput.n);
-            }
-            // order is null
-            else if (required == 0) {
-                ++matchAtInput.i;
-                continue;
-            }
-            // remaining >= depositAmount
-            else {
-                remaining -= required;
-                TransferHelper.safeTransfer(
-                    matchAtInput.give,
-                    matchAtInput.pair,
-                    required
-                );
-                IMatchingEngine.OrderMatch memory orderMatch = IOrderbook(
-                    matchAtInput.pair
-                ).execute(
-                        orderId,
-                        !matchAtInput.isBid,
-                        matchAtInput.recipient,
-                        required,
-                        clear
-                    );
-                // emit event order matched
-                emit OrderMatched(
-                    matchAtInput.pair,
-                    matchAtInput.orderHistoryId,
-                    orderId,
-                    matchAtInput.isBid,
-                    matchAtInput.price,
-                    matchAtInput.total,
-                    clear,
-                    orderMatch
-                );
-                ++matchAtInput.i;
-            }
-        }
-        k = matchAtInput.i;
-        return (remaining, k);
-    }
-
-    /**
      * @dev Executes limit order by matching orders in the orderbook based on the provided limit price.
      * @param pair The address of the orderbook to execute the limit order on.
      * @param amount The amount of asset to trade.
@@ -1696,89 +1605,7 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         uint32 n,
         uint16 orderHistoryId
     ) internal returns (uint256 remaining, uint256 bidHead, uint256 askHead) {
-        remaining = amount;
-        LimitOrderState memory state = LimitOrderState({
-            lmp: IOrderbook(pair).lmp(),
-            i: 0,
-            prevI: 0
-        });
-        bidHead = IOrderbook(pair).clearEmptyHead(true);
-        askHead = IOrderbook(pair).clearEmptyHead(false);
-        // In LimitBuy
-        if (isBid) {
-            if (state.lmp != 0) {
-                if (askHead != 0 && limitPrice < askHead) {
-                    return (remaining, bidHead, askHead);
-                } else if (askHead == 0) {
-                    return (remaining, bidHead, askHead);
-                }
-            }
-            // check if there is any matching ask order until matching ask order price is lower than the limit bid Price
-            while (
-                remaining > 0 && askHead != 0 && askHead <= limitPrice && state.i < n
-            ) {
-                state.lmp = askHead;
-                state.prevI = state.i;
-                (remaining, state.i) = _matchAt(
-                    MatchAtInput({
-                        pair: pair,
-                        give: give,
-                        recipient: recipient,
-                        isBid: isBid,
-                        amount: remaining,
-                        total: amount,
-                        price: askHead,
-                        i: state.i,
-                        n: n,
-                        orderHistoryId: orderHistoryId
-                    })
-                );
-                askHead = (state.i == state.prevI) ? 0 : IOrderbook(pair).clearEmptyHead(false);
-            }
-            // update heads
-            bidHead = IOrderbook(pair).clearEmptyHead(true);
-        }
-        // In LimitSell
-        else {
-            // check limit ask price is within 20% spread of last matched price
-            if (state.lmp != 0) {
-                if (bidHead != 0 && limitPrice > bidHead) {
-                    return (remaining, bidHead, askHead);
-                } else if (bidHead == 0) {
-                    return (remaining, bidHead, askHead);
-                }
-            }
-            while (
-                remaining > 0 && bidHead != 0 && bidHead >= limitPrice && state.i < n
-            ) {
-                state.lmp = bidHead;
-                state.prevI = state.i;
-                (remaining, state.i) = _matchAt(
-                    MatchAtInput({
-                        pair: pair,
-                        give: give,
-                        recipient: recipient,
-                        isBid: isBid,
-                        amount: remaining,
-                        total: amount,
-                        price: bidHead,
-                        i: state.i,
-                        n: n,
-                        orderHistoryId: orderHistoryId
-                    })
-                );
-                bidHead = (state.i == state.prevI) ? 0 : IOrderbook(pair).clearEmptyHead(true);
-            }
-            // update heads
-            askHead = IOrderbook(pair).clearEmptyHead(false);
-        }
-        // set new market price as the orders are matched
-        if (state.lmp != 0) {
-            IOrderbook(pair).setLmp(state.lmp);
-            emit NewMarketPrice(pair, state.lmp, isBid);
-        }
-
-        return (remaining, bidHead, askHead); // return bidHead, and askHead
+        return MatchingLib.limitOrder(pair, amount, give, recipient, isBid, limitPrice, n, orderHistoryId, maxMatches);
     }
 
     /**

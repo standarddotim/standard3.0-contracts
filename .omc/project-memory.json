@@ -126,8 +126,8 @@
   "hotPaths": [
     {
       "path": "src/exchange/MatchingEngine.sol",
-      "accessCount": 26,
-      "lastAccessed": 1781965008436,
+      "accessCount": 37,
+      "lastAccessed": 1781965520404,
       "type": "file"
     },
     {
@@ -149,6 +149,60 @@
       "type": "file"
     },
     {
+      "path": "script/exchange/Base.s.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781971272031,
+      "type": "file"
+    },
+    {
+      "path": "script/exchange/Fraxtal.s.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781971274700,
+      "type": "file"
+    },
+    {
+      "path": "script/exchange/RiseTestnet.s.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781971277289,
+      "type": "file"
+    },
+    {
+      "path": "script/exchange/MonadTestnet.s.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781971279939,
+      "type": "file"
+    },
+    {
+      "path": "script/exchange/SomniaMainnet.s.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781971282427,
+      "type": "file"
+    },
+    {
+      "path": "script/exchange/SomniaTestnet.s.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781971284996,
+      "type": "file"
+    },
+    {
+      "path": "script/exchange/Story.s.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781971287578,
+      "type": "file"
+    },
+    {
+      "path": "script/exchange/MegaETHTestnet.s.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781971290044,
+      "type": "file"
+    },
+    {
+      "path": "script/exchange/InkSepolia.s.sol",
+      "accessCount": 4,
+      "lastAccessed": 1781971292361,
+      "type": "file"
+    },
+    {
       "path": "src/exchange/interfaces/IMatchingEngine.sol",
       "accessCount": 3,
       "lastAccessed": 1781963410544,
@@ -158,6 +212,12 @@
       "path": "foundry.toml",
       "accessCount": 3,
       "lastAccessed": 1781963434953,
+      "type": "file"
+    },
+    {
+      "path": "script/exchange/Ethereum.s.sol",
+      "accessCount": 3,
+      "lastAccessed": 1781971302391,
       "type": "file"
     },
     {
@@ -182,6 +242,12 @@
       "path": "src/exchange/orderbooks/OrderbookFactory.sol",
       "accessCount": 1,
       "lastAccessed": 1781963987704,
+      "type": "file"
+    },
+    {
+      "path": "src/exchange/libraries/MatchingLib.sol",
+      "accessCount": 1,
+      "lastAccessed": 1781965463504,
       "type": "file"
     }
   ],
