@@ -38,6 +38,7 @@ contract MockOrderbook is IOrderbook, Initializable {
 
     uint64 private decDiff;
     bool private baseBquote;
+    address private pool;
     uint64 public tradeCount = 0;
 
     ExchangeLinkedList.PriceLinkedList private priceLists;
@@ -86,6 +87,14 @@ contract MockOrderbook is IOrderbook, Initializable {
     function setLmp(uint256 price) external onlyEngine {
         if (price == 0) revert PriceIsZero(price);
         priceLists._setLmp(price);
+    }
+
+    function setPool(address pool_) external onlyEngine {
+        pool = pool_;
+    }
+
+    function getPool() external view returns (address) {
+        return pool;
     }
 
     function placeAsk(

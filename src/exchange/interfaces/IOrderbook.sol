@@ -9,6 +9,10 @@ interface IOrderbook {
 
     function setLmp(uint256 price) external;
 
+    function setPool(address pool_) external;
+
+    function getPool() external view returns (address);
+
     function placeAsk(address owner, uint256 price, uint256 amount) external returns (uint32 id, bool foundDmt);
 
     function placeBid(address owner, uint256 price, uint256 amount) external returns (uint32 id, bool foundDmt);
