@@ -11,6 +11,7 @@ import {TransferHelper} from "../libraries/TransferHelper.sol";
 import {ExchangeLinkedList} from "../libraries/ExchangeLinkedList.sol";
 import {ExchangeOrderbook} from "../libraries/ExchangeOrderbook.sol";
 import {IMatchingEngine} from "../interfaces/IMatchingEngine.sol";
+import {Oracle, ORACLE_CARDINALITY} from "../libraries/Oracle.sol";
 
 interface IWETHMinimal {
     function WETH() external view returns (address);
@@ -45,6 +46,9 @@ contract MockOrderbook is IOrderbook, Initializable {
     ExchangeOrderbook.OrderStorage private _askOrders;
     ExchangeOrderbook.OrderStorage private _bidOrders;
 
+    Oracle.Observation[ORACLE_CARDINALITY] private observations;
+    uint16 private observationIndex;
+
     error InvalidDecimals(uint8 base, uint8 quote);
     error InvalidAccess(address sender, address allowed);
     error PriceIsZero(uint256 price);
@@ -72,6 +76,7 @@ contract MockOrderbook is IOrderbook, Initializable {
         decDiff = uint64(10 ** diff);
         baseBquote = baseBquote_;
         pair = Pair(id_, base_, quote_, engine_);
+        Oracle.initialize(observations, uint32(block.timestamp));
     }
 
     modifier onlyEngine() {
@@ -87,7 +92,12 @@ contract MockOrderbook is IOrderbook, Initializable {
 
     function setLmp(uint256 price) external onlyEngine {
         if (price == 0) revert PriceIsZero(price);
+        observationIndex = Oracle.write(observations, observationIndex, uint32(block.timestamp), priceLists.lmp);
         priceLists._setLmp(price);
+    }
+
+    function twap(uint32 minSecondsAgo) external view returns (uint256 price, uint32 actualWindow) {
+        return Oracle.twap(observations, observationIndex, uint32(block.timestamp), priceLists.lmp, minSecondsAgo);
     }
 
     function setPool(address pool_) external onlyEngine {

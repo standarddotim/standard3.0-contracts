@@ -8,6 +8,7 @@ import {TransferHelper} from "../libraries/TransferHelper.sol";
 import {ExchangeLinkedList} from "../libraries/ExchangeLinkedList.sol";
 import {ExchangeOrderbook} from "../libraries/ExchangeOrderbook.sol";
 import {IMatchingEngine} from "../interfaces/IMatchingEngine.sol";
+import {Oracle, ORACLE_CARDINALITY} from "../libraries/Oracle.sol";
 
 interface IWETHMinimal {
     function WETH() external view returns (address);
@@ -42,6 +43,11 @@ contract Orderbook is IOrderbook, Initializable {
     ExchangeOrderbook.OrderStorage private _bidOrders;
     uint64 public tradeCount = 0;
 
+    // TWAP ring buffer over `lmp` -- see Oracle.sol for the full threat model this defends
+    // against. Seeded in `initialize`, written on every `setLmp` call.
+    Oracle.Observation[ORACLE_CARDINALITY] private observations;
+    uint16 private observationIndex;
+
     error InvalidDecimals(uint8 base, uint8 quote);
     error InvalidAccess(address sender, address allowed);
     error PriceIsZero(uint256 price);
@@ -69,6 +75,7 @@ contract Orderbook is IOrderbook, Initializable {
         decDiff = uint64(10 ** diff);
         baseBquote = baseBquote_;
         pair = Pair(id_, base_, quote_, engine_);
+        Oracle.initialize(observations, uint32(block.timestamp));
     }
 
     modifier onlyEngine() {
@@ -80,7 +87,18 @@ contract Orderbook is IOrderbook, Initializable {
 
     function setLmp(uint256 price) external onlyEngine {
         if (price == 0) revert PriceIsZero(price);
+        // Write an observation carrying the *outgoing* price forward before overwriting it --
+        // that's the price that was actually in effect for the time elapsed since the last
+        // update. See Oracle.sol for why this is the single choke point for the TWAP.
+        observationIndex = Oracle.write(observations, observationIndex, uint32(block.timestamp), priceLists.lmp);
         priceLists._setLmp(price);
+    }
+
+    /// @notice Time-weighted average price over a window of at least `minSecondsAgo`, ending
+    /// now. See Oracle.sol for the threat model and why this is manipulation-resistant in a way
+    /// `lmp()` alone is not. Reverts if the pair hasn't been listed for at least that long yet.
+    function twap(uint32 minSecondsAgo) external view returns (uint256 price, uint32 actualWindow) {
+        return Oracle.twap(observations, observationIndex, uint32(block.timestamp), priceLists.lmp, minSecondsAgo);
     }
 
     function setPool(address pool_) external onlyEngine {

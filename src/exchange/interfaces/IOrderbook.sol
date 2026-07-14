@@ -9,6 +9,8 @@ interface IOrderbook {
 
     function setLmp(uint256 price) external;
 
+    function twap(uint32 minSecondsAgo) external view returns (uint256 price, uint32 actualWindow);
+
     function setPool(address pool_) external;
 
     function getPool() external view returns (address);
