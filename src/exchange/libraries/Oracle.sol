@@ -44,11 +44,15 @@ uint16 constant ORACLE_CARDINALITY = 512;
  */
 library Oracle {
     struct Observation {
+        // `blockTimestamp` and `initialized` are deliberately declared adjacent (both before
+        // `priceCumulative`) so Solidity packs them into a single storage slot instead of three
+        // -- `priceCumulative` alone needs a full slot regardless, so packing the other two
+        // together is a genuine 33%-per-write storage-cost reduction, not a cosmetic reorder.
         uint32 blockTimestamp;
+        bool initialized;
         // Sum, over every second since the buffer's first observation, of the price that was
         // in effect during that second. TWAP over [t1, t2] = (cumulative(t2) - cumulative(t1)) / (t2 - t1).
         uint256 priceCumulative;
-        bool initialized;
     }
 
     error AlreadyInitialized();
@@ -120,10 +124,25 @@ library Oracle {
     }
 
     /// @dev Returns the newest observation whose age (blockTimestamp distance from `now`) is
-    /// >= `minSecondsAgo`. Age strictly increases as you walk backward (toward older logical
-    /// positions) through the populated range of the buffer, so this is a monotonic boundary
-    /// search: binary search over logical position (0 = oldest currently-retained observation)
-    /// finds it in O(log ORACLE_CARDINALITY) storage reads instead of a full linear scan.
+    /// >= `minSecondsAgo`, when one exists. Age strictly increases as you walk backward (toward
+    /// older logical positions) through the populated range of the buffer, so this is a
+    /// monotonic boundary search: binary search over logical position (0 = oldest
+    /// currently-retained observation) finds it in O(log ORACLE_CARDINALITY) storage reads
+    /// instead of a full linear scan.
+    ///
+    /// Two distinct reasons the oldest retained observation might not be old enough, handled
+    /// differently:
+    /// - Buffer not yet wrapped (fewer than ORACLE_CARDINALITY writes have ever happened): this
+    ///   pair/market simply hasn't existed long enough for a window this long to exist yet.
+    ///   Reverts -- there is no data to give the caller, degrading would mean fabricating it.
+    /// - Buffer fully wrapped (every slot has been written at least once) but writes have come
+    ///   more often than `minSecondsAgo / ORACLE_CARDINALITY` apart, so even the *oldest*
+    ///   observation this fixed-size buffer can retain isn't old enough: this is a capacity
+    ///   limit, not a bootstrap gap. A market trading at least once every block on a fast chain
+    ///   can permanently be in this state for large `minSecondsAgo` values. Reverting here would
+    ///   brick every caller requesting that window forever, so this degrades instead: return the
+    ///   oldest observation the buffer actually has, and let the caller (via `twap`'s returned
+    ///   `actualWindow`) see that it got less history than it asked for, rather than nothing.
     function _findAtLeast(
         Observation[ORACLE_CARDINALITY] storage self,
         uint16 newestIndex,
@@ -134,10 +153,12 @@ library Oracle {
         uint16 oldestIndex = wrapped ? uint16((uint256(newestIndex) + 1) % ORACLE_CARDINALITY) : 0;
         uint256 count = wrapped ? ORACLE_CARDINALITY : uint256(newestIndex) + 1;
 
-        // Oldest observation still isn't old enough -- there's no valid window of this length yet.
         Observation memory oldest = self[oldestIndex];
         if (blockTimestamp - oldest.blockTimestamp < minSecondsAgo) {
-            revert InsufficientHistory(minSecondsAgo, blockTimestamp - oldest.blockTimestamp);
+            if (!wrapped) {
+                revert InsufficientHistory(minSecondsAgo, blockTimestamp - oldest.blockTimestamp);
+            }
+            return oldest; // buffer at capacity -- degrade to the longest window it can provide
         }
 
         // Binary search logical positions [0, count-1] (0 = oldest) for the smallest logical

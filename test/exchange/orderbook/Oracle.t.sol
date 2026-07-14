@@ -122,7 +122,7 @@ contract OracleTest is Test {
     function testBufferWraparoundEvictsOldestObservation() public {
         harness.initialize(0);
 
-        uint16 cardinality = harness.index() == 0 ? _cardinality() : _cardinality();
+        uint16 cardinality = _cardinality();
         // Write exactly `cardinality` observations at t=1..cardinality, each holding price 100.
         // The write at t=cardinality wraps the ring buffer index back to 0, overwriting the
         // original t=0 seed observation.
@@ -131,16 +131,47 @@ contract OracleTest is Test {
         }
         assertEq(harness.index(), 0); // wrapped exactly back to slot 0
 
-        // The original t=0 observation is gone; oldest retained is now at t=1. A window that
-        // would have needed the t=0 data (i.e. exactly `cardinality` seconds old, measured from
-        // t=cardinality) must now revert, since only `cardinality - 1` seconds of history remain.
-        vm.expectRevert();
-        harness.twap(cardinality, 100, cardinality);
-
-        // But a window one second shorter (relying only on t=1 onward, which does survive) succeeds.
+        // The original t=0 observation is gone; oldest retained is now at t=1, giving only
+        // `cardinality - 1` seconds of real history. Requesting exactly `cardinality -1` succeeds
+        // with the full available window.
         (uint256 price, uint32 window) = harness.twap(cardinality, 100, cardinality - 1);
         assertEq(price, 100);
         assertEq(window, cardinality - 1);
+    }
+
+    /// @notice The buffer-capacity case that reverting unconditionally would get wrong: once the
+    /// ring buffer is fully wrapped (every slot has been written at least once), the oldest
+    /// observation it can possibly retain is a hard capacity limit, not a bootstrap gap. A market
+    /// that writes at least once every block on a fast chain can be in this state *forever* for
+    /// large `minSecondsAgo` values -- reverting here would permanently brick every caller
+    /// requesting that window. Instead this degrades: return the longest window the buffer
+    /// actually has, and let the caller see that via the returned `actualWindow`.
+    function testTwapDegradesInsteadOfRevertingWhenBufferAtCapacity() public {
+        harness.initialize(0);
+        uint16 cardinality = _cardinality();
+        for (uint32 t = 1; t <= cardinality; t++) {
+            harness.write(t, 100);
+        }
+
+        // Request a window the buffer's fixed capacity can never satisfy, no matter how much
+        // real time passes -- e.g. 10x the buffer's total capacity. Must not revert.
+        (uint256 price, uint32 window) = harness.twap(cardinality, 100, uint32(cardinality) * 10);
+        assertEq(price, 100);
+        assertEq(window, cardinality - 1); // the longest window 512 one-per-block writes can give
+    }
+
+    /// @notice Companion to the above: confirms the *not-yet-wrapped* case still reverts rather
+    /// than silently degrading, since degrading there would mean fabricating history that never
+    /// happened (as opposed to the at-capacity case, which degrades to real, if shorter, history).
+    function testTwapStillRevertsWhenBufferNotYetWrapped() public {
+        OracleHarness fresh = new OracleHarness();
+        fresh.initialize(0);
+        fresh.write(10, 100); // buffer far from full -- only 2 observations exist
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Oracle.InsufficientHistory.selector, uint32(1000), uint32(10))
+        );
+        fresh.twap(10, 100, 1000);
     }
 
     function _cardinality() internal pure returns (uint16) {
