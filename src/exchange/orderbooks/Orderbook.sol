@@ -45,6 +45,7 @@ contract Orderbook is IOrderbook, Initializable {
     error InvalidDecimals(uint8 base, uint8 quote);
     error InvalidAccess(address sender, address allowed);
     error PriceIsZero(uint256 price);
+    error PoolAlreadySet(address pool);
 
     function _nextTradeId() internal view returns (uint64) {
         return
@@ -83,6 +84,7 @@ contract Orderbook is IOrderbook, Initializable {
     }
 
     function setPool(address pool_) external onlyEngine {
+        if (pool != address(0)) revert PoolAlreadySet(pool);
         pool = pool_;
     }
 

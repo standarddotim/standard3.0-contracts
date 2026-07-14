@@ -33,4 +33,19 @@ contract PoolAwarenessTest is BaseSetup {
         Orderbook(payable(pairAddr)).setPool(address(0xCAFE));
         assertEq(Orderbook(payable(pairAddr)).getPool(), address(0xCAFE));
     }
+
+    function testSetPoolRevertsOnSecondCall() public {
+        super.setUp();
+        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1));
+        address pairAddr = matchingEngine.getPair(address(token1), address(token2));
+
+        vm.prank(address(matchingEngine));
+        Orderbook(payable(pairAddr)).setPool(address(0xCAFE));
+
+        vm.prank(address(matchingEngine));
+        vm.expectRevert(
+            abi.encodeWithSelector(Orderbook.PoolAlreadySet.selector, address(0xCAFE))
+        );
+        Orderbook(payable(pairAddr)).setPool(address(0xBEEF));
+    }
 }
