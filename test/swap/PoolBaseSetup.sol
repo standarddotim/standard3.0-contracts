@@ -66,8 +66,14 @@ contract PoolBaseSetup is Test {
         poolFactory.setPositionManager(positionManager);
         matchingEngine.setPoolFactory(address(poolFactory));
 
-        matchingEngine.setDefaultSpread(2000000, 2000000, true);
-        matchingEngine.setDefaultSpread(2000000, 2000000, false);
+        // 10% each side -- comfortable headroom above the 5% slippageLimit positions used
+        // throughout test/swap/Swap.t.sol (Task 10+); MatchingEngine._limitBuy/_limitSell
+        // clamp actual matching to this admin-configured bound regardless of what price a
+        // caller (including Pool.swap's boundPrice) requests, so it must be at least as
+        // wide as the widest slippageLimit any swap test exercises, or swaps will safely
+        // fail to match at all (docs/swap/design.md §4.6, point 3).
+        matchingEngine.setDefaultSpread(10000000, 10000000, true);
+        matchingEngine.setDefaultSpread(10000000, 10000000, false);
         matchingEngine.setDefaultFee(true, 100000);
         matchingEngine.setDefaultFee(false, 100000);
 
@@ -81,6 +87,12 @@ contract PoolBaseSetup is Test {
         token2.approve(address(matchingEngine), 10000000e18);
 
         matchingEngine.addPair(address(token1), address(token2), 100e8, 0, address(token1));
+        // Advance past the TWAP oracle's minimum history window so Pool.swap's
+        // Orderbook.twap(600) call (Task 10+) doesn't revert InsufficientHistory on a
+        // freshly-listed pair. Hardcoded 600 rather than referencing Pool.TWAP_WINDOW so
+        // this fixture doesn't take a compile-time dependency on a swap-specific value --
+        // same reasoning as the spread-widening above.
+        vm.warp(block.timestamp + 600);
         address bookAddr = matchingEngine.getPair(address(token1), address(token2));
         book = Orderbook(payable(bookAddr));
         address poolAddr = poolFactory.getPool(address(token1), address(token2));
