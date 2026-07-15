@@ -185,10 +185,22 @@ contract SwapTest is PoolBaseSetup {
         pool.swap(1000e18, true, trader1, false);
 
         IPool.Position memory afterSwap = pool.getPosition(positionId);
-        // Only ~5e18 base could have matched (that's all that was available) -- confirm the
-        // position's base decreased by at most what it had, not by some larger/incorrect
-        // amount derived from the swapper's full 1000e18 attempted amountIn.
-        assertLe(before.baseAmount - afterSwap.baseAmount, before.baseAmount);
-        assertGt(afterSwap.quoteAmount, before.quoteAmount);
+        // assertLe(before.baseAmount - afterSwap.baseAmount, before.baseAmount) was here --
+        // dropped as a tautology: baseAmount is a uint256 that only ever decreases (Solidity
+        // 0.8 reverts on underflow rather than wrapping), so that difference is unconditionally
+        // <= before.baseAmount for ANY legal decrease, including a hypothetical "matched too
+        // much" bug -- which would revert on underflow before this assertion is ever reached,
+        // not produce a value it could catch. Replaced with exact values, independently
+        // computed the same way testSwapCreditsPrincipalAndFeeToContributingPosition does:
+        // the position had exactly 5e18 base available (only this position exists, no other
+        // contributors), and the swapper's 1000e18 quote budget vastly exceeds what's needed
+        // to buy it (~525e18 quote worth), so the LP leg's entire 5e18 gets consumed --
+        // matchedLpAmount is exactly 5e18, not merely "at most" it.
+        assertEq(afterSwap.baseAmount, 0);
+        uint256 boundPrice = (100e8 * (1e8 + 5000000)) / 1e8;
+        uint32 makerFeeRate = matchingEngine.feeOf(address(token1), address(token2), address(pool), true);
+        uint256 grossLpProceeds = book.convert(boundPrice, before.baseAmount, true); // base->quote
+        uint256 lpFee = (grossLpProceeds * makerFeeRate) / matchingEngine.DENOM();
+        assertEq(afterSwap.quoteAmount, before.quoteAmount + grossLpProceeds - lpFee);
     }
 }
