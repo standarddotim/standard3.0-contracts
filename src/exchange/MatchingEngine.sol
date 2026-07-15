@@ -1169,7 +1169,16 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         // create orderbook for the pair
         pair = IOrderbookFactory(orderbookFactory).createBook(base, quote);
         IOrderbook(pair).setLmp(listingPrice);
-        if (poolFactory != address(0)) {
+        // Skip Pool creation for a WETH-linked pair -- Orderbook._sendFunds unconditionally
+        // unwraps WETH to native ETH on settlement, which Pool.swap's ERC20-balance-delta
+        // accounting cannot observe, silently misreporting a filled WETH leg as amountOut=0
+        // (found in the swap module's final review; tracked as a real limitation, not yet
+        // supported -- see docs/swap/design.md Sec10). This only skips the swap module's
+        // Pool for this pair; the orderbook/CLOB pair above lists and trades normally,
+        // completely unaffected -- WETH pairs have always worked fine through
+        // limitBuy/limitSell/marketBuy/etc., this guard only prevents Pool.swap/SwapRouter
+        // from being used against a pair where their accounting would silently misbehave.
+        if (poolFactory != address(0) && base != WETH && quote != WETH) {
             address pool = IPoolFactory(poolFactory).createPool(base, quote, pair);
             IOrderbook(pair).setPool(pool);
         }
