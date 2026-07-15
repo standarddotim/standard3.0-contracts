@@ -131,16 +131,14 @@ contract RouterTest is PoolBaseSetup {
         assertGt(token3.balanceOf(trader1), 0);
     }
 
-    function testMidPathLeftoverRefundsEntirePath() public {
-        // Shrink the first hop's available liquidity so hop 1 partially fills.
+    function testMidPathPartialFillRevertsEntirePath() public {
+        // Shrink the first hop's available liquidity so hop 1 can only partially fill.
         vm.prank(positionManager);
         pool.removeLiquidity(positionId, 995e18, 0, lp1);
 
         // Same plain-ERC20 substitution as testMultiHopSwapChainsThroughTwoPools above, and
         // for the same reason (avoid Orderbook._sendFunds's unconditional WETH auto-unwrap
-        // interacting badly with Pool.swap's ERC20-balance-delta accounting) -- though this
-        // test's early-return-on-leftover means hop 2 is never actually reached, so it's a
-        // defensive/consistency fix here rather than one this specific test would have hit.
+        // interacting badly with Pool.swap's ERC20-balance-delta accounting).
         MockQuote token3 = new MockQuote("Quote2", "QUOTE2");
         token3.mint(lp1, 10000e18);
 
@@ -178,13 +176,42 @@ contract RouterTest is PoolBaseSetup {
         path[1] = address(token1);
         path[2] = address(token3);
 
+        // A non-final hop's partial fill now reverts the whole transaction (final
+        // whole-branch review, finding C1): an earlier version tried to gracefully refund
+        // only the unfilled input, silently stranding whatever this hop had already
+        // produced in the router's own balance -- real, confirmed fund loss, since nothing
+        // ever swept it back out. Revert is the fix, matching the design doc's own stated
+        // intent ("refund the whole path"): Solidity's atomicity means every state change
+        // in this call, including hop 1's real match against the order book and the initial
+        // pull from the trader, unwinds together.
+        //
+        // Independently compute the expected unfilledAmount the same way _executeHop's
+        // underlying Pool.swap does: the shrunk position offers exactly 5e18 base (all of
+        // it, since 1000e18 quote demand vastly exceeds it), matched at this pool's own
+        // 5% slippage bound (100e8 * 1.05 = 105e8); converting that matched base back to
+        // quote terms gives what actually got spent, and the remainder is what leftoverIn
+        // (and therefore MidPathPartialFill's unfilledAmount) must equal. Asserting the
+        // exact selector+args (not a bare vm.expectRevert()) proves it's genuinely this new
+        // guard firing on the exact right amount, not some unrelated failure that would
+        // also happen to revert.
+        uint256 boundPrice = (100e8 * (1e8 + 5000000)) / 1e8;
+        uint256 matchedQuoteSpent = book.convert(boundPrice, 5e18, true); // base->quote
+        uint256 expectedUnfilled = 1000e18 - matchedQuoteSpent;
+
         uint256 traderQuoteBefore = token2.balanceOf(trader1);
+        uint256 traderBaseBefore = token1.balanceOf(trader1);
 
         vm.prank(trader1);
-        (uint256 amountOut, uint256 leftoverIn) = router.swap(path, 1000e18, 0, trader1, false);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISwapRouter.MidPathPartialFill.selector, address(token2), address(token1), expectedUnfilled)
+        );
+        router.swap(path, 1000e18, 0, trader1, false);
 
-        assertEq(amountOut, 0);
-        assertGt(leftoverIn, 0);
-        assertEq(token2.balanceOf(trader1), traderQuoteBefore - (1000e18 - leftoverIn));
+        // Full revert must mean full atomicity: the trader's balance of every token in the
+        // path is byte-for-byte unchanged -- direct proof nothing was spent, matched, or
+        // stranded anywhere, not an assumption resting on "reverts are atomic" alone.
+        assertEq(token2.balanceOf(trader1), traderQuoteBefore);
+        assertEq(token1.balanceOf(trader1), traderBaseBefore);
+        assertEq(token3.balanceOf(trader1), 0);
     }
 }

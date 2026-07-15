@@ -37,9 +37,17 @@ contract SwapRouter is ISwapRouter {
 
             if (!isFinalHop && leftoverIn > 0) {
                 // Mid-path leftover has no natural single order to become (design doc §4.4) --
-                // refund the whole path immediately rather than continuing with a partial amount.
-                TransferHelper.safeTransfer(path[i], msg.sender, leftoverIn);
-                return (0, leftoverIn);
+                // "refund the whole path" means the whole path, not just this hop's unspent
+                // input. An earlier version refunded only `leftoverIn` and returned, silently
+                // stranding `currentAmountIn` (this hop's already-produced output, sitting in
+                // this contract's own balance as an intermediate hop's recipient) with no
+                // recovery path -- confirmed as a real, silent fund-loss bug in final review
+                // (a 3+-hop path where a non-final hop partially fills). Reverting the whole
+                // transaction is the fix: Solidity's atomicity means every state change in
+                // this call -- including hop 1's real match against the order book, and the
+                // initial safeTransferFrom -- unwinds together, so the trader gets back
+                // exactly their original amountIn with no partial/stranded state possible.
+                revert MidPathPartialFill(path[i], path[i + 1], leftoverIn);
             }
         }
 

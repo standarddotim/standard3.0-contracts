@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 interface ISwapRouter {
     error PoolDoesNotExist(address tokenIn, address tokenOut);
     error SlippageExceeded(uint256 requested, uint256 actual);
+    error MidPathPartialFill(address tokenIn, address tokenOut, uint256 unfilledAmount);
 
     function swap(
         address[] calldata path,
