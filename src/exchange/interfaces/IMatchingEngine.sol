@@ -91,6 +91,10 @@ interface IMatchingEngine {
 
     function setDefaultFee(bool isMaker, uint32 fee_) external returns (bool success);
 
+    function setPoolFeeShare(uint32 poolFeeShare_) external returns (bool success);
+
+    function poolFeeShare() external view returns (uint32);
+
     function setDefaultSpread(uint32 buy, uint32 sell, bool isMkt) external returns (bool success);
 
     function setSpread(address base, address quote, uint32 buy, uint32 sell, bool isMkt)

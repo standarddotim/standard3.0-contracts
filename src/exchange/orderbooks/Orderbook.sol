@@ -358,12 +358,21 @@ contract Orderbook is IOrderbook, Initializable {
             feeAmount = (amount * fee) / DENOM;
             address feeTo = IMatchingEngine(pair.engine).feeTo();
             uint256 withoutFee = amount - feeAmount;
+            uint256 poolShare = 0;
+            if (to == pool && pool != address(0)) {
+                uint32 share = IMatchingEngine(pair.engine).poolFeeShare();
+                poolShare = (feeAmount * share) / DENOM;
+            }
+            uint256 feeToShare = feeAmount - poolShare;
+
             if (token == weth) {
                 IWETHMinimal(weth).withdraw(amount);
-                payable(feeTo).transfer(feeAmount);
+                if (feeToShare > 0) payable(feeTo).transfer(feeToShare);
+                if (poolShare > 0) payable(pool).transfer(poolShare);
                 payable(to).transfer(withoutFee);
             } else {
-                TransferHelper.safeTransfer(token, feeTo, feeAmount);
+                if (feeToShare > 0) TransferHelper.safeTransfer(token, feeTo, feeToShare);
+                if (poolShare > 0) TransferHelper.safeTransfer(token, pool, poolShare);
                 TransferHelper.safeTransfer(token, to, withoutFee);
             }
             return feeAmount;

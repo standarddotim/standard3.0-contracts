@@ -41,6 +41,10 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     uint32 private defaultMakerFee = 100000;
     // base taker fee in numerator for DENOM=100000000
     uint32 private defaultTakerFee = 100000;
+    // Share of maker/taker fee routed to a pair's registered Pool instead of feeTo,
+    // for orders whose owner is that pair's Pool. DENOM=1e8 scale. Defaults to 0 (no
+    // behavior change) -- see docs/swap/implementation-plan.md Task 4.
+    uint32 public poolFeeShare;
     // Factories
     address public orderbookFactory;
     // WETH
@@ -219,6 +223,13 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         } else {
             defaultTakerFee = fee_;
         }
+        return true;
+    }
+
+    function setPoolFeeShare(
+        uint32 poolFeeShare_
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool success) {
+        poolFeeShare = poolFeeShare_;
         return true;
     }
 
