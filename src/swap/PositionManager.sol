@@ -2,11 +2,11 @@
 pragma solidity ^0.8.24;
 
 import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IPositionManager} from "./interfaces/IPositionManager.sol";
 import {IPool} from "./interfaces/IPool.sol";
-import {IPoolFactory} from "./interfaces/IPoolFactory.sol";
 
-contract PositionManager is IPositionManager, ERC721Upgradeable {
+contract PositionManager is IPositionManager, ERC721Upgradeable, OwnableUpgradeable {
     struct TokenPosition {
         address pool;
         uint256 positionId;
@@ -25,9 +25,10 @@ contract PositionManager is IPositionManager, ERC721Upgradeable {
 
     function initialize(string memory name_, string memory symbol_) external initializer {
         __ERC721_init(name_, symbol_);
+        __Ownable_init(msg.sender);
     }
 
-    function setPoolFactory(address poolFactory_) external {
+    function setPoolFactory(address poolFactory_) external onlyOwner {
         poolFactory = poolFactory_;
     }
 

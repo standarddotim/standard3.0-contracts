@@ -1,5 +1,5 @@
-// contracts/test/swap/PositionManagerAddLiquidity.t.sol
-pragma solidity >=0.8;
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity ^0.8.24;
 
 import {PoolBaseSetup} from "./PoolBaseSetup.sol";
 import {PositionManager} from "../../src/swap/PositionManager.sol";
