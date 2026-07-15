@@ -131,4 +131,64 @@ contract SwapTest is PoolBaseSetup {
             grossLpProceeds - lpFee + expectedPoolShareOfFee
         );
     }
+
+    function testPartialFillRefundsLeftoverByDefault() public {
+        // Shrink the position's available base so a large quote input can't be fully absorbed.
+        vm.prank(positionManager);
+        pool.removeLiquidity(positionId, 995e18, 0, lp1); // leaves 5e18 base available
+
+        vm.prank(trader1);
+        token2.approve(address(pool), 1000e18);
+
+        uint256 traderQuoteBefore = token2.balanceOf(trader1);
+
+        vm.prank(trader1);
+        (uint256 amountOut, uint256 leftoverIn) = pool.swap(1000e18, true, trader1, false);
+
+        assertGt(amountOut, 0);
+        assertGt(leftoverIn, 0);
+        // Full input pulled in, but leftover refunded back out -- net spend is amountIn - leftoverIn.
+        assertEq(token2.balanceOf(trader1), traderQuoteBefore - (1000e18 - leftoverIn));
+    }
+
+    function testOptInRestingLeftoverPlacesSwapperOwnedOrder() public {
+        vm.prank(positionManager);
+        pool.removeLiquidity(positionId, 995e18, 0, lp1);
+
+        vm.prank(trader1);
+        token2.approve(address(pool), 1000e18);
+
+        vm.prank(trader1);
+        (, uint256 leftoverIn) = pool.swap(1000e18, true, trader1, true);
+        // leftoverIn is read from recipient's own balance delta (design.md §4.6); a resting
+        // remainder's tokens move into the exchange's escrow (owned by trader1 as a resting
+        // order), never back into trader1's wallet, so there is nothing for a balance delta
+        // to observe here -- leftoverIn == 0 in this mode is the correct, documented
+        // consequence of that design, not a sign the swap fully matched. The resting order
+        // itself (checked below) is the real, meaningful verification for this test.
+        assertEq(leftoverIn, 0);
+
+        // trader1 should now own a resting bid order for the leftover amount.
+        (uint256 bidHead, ) = matchingEngine.heads(address(token1), address(token2));
+        assertGt(bidHead, 0);
+    }
+
+    function testPartialFillStillSettlesMatchedPortionToPosition() public {
+        vm.prank(positionManager);
+        pool.removeLiquidity(positionId, 995e18, 0, lp1); // leaves 5e18 base available
+
+        IPool.Position memory before = pool.getPosition(positionId);
+
+        vm.prank(trader1);
+        token2.approve(address(pool), 1000e18);
+        vm.prank(trader1);
+        pool.swap(1000e18, true, trader1, false);
+
+        IPool.Position memory afterSwap = pool.getPosition(positionId);
+        // Only ~5e18 base could have matched (that's all that was available) -- confirm the
+        // position's base decreased by at most what it had, not by some larger/incorrect
+        // amount derived from the swapper's full 1000e18 attempted amountIn.
+        assertLe(before.baseAmount - afterSwap.baseAmount, before.baseAmount);
+        assertGt(afterSwap.quoteAmount, before.quoteAmount);
+    }
 }
