@@ -229,6 +229,7 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     function setPoolFeeShare(
         uint32 poolFeeShare_
     ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool success) {
+        require(poolFeeShare_ <= DENOM, "poolFeeShare exceeds DENOM");
         poolFeeShare = poolFeeShare_;
         return true;
     }

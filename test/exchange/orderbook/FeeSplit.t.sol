@@ -1,5 +1,5 @@
-// contracts/test/exchange/orderbook/FeeSplit.t.sol
-pragma solidity >=0.8;
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity ^0.8.24;
 
 import {BaseSetup} from "../OrderbookBaseSetup.sol";
 import {Orderbook} from "../../../src/exchange/orderbooks/Orderbook.sol";
@@ -53,13 +53,21 @@ contract FeeSplitTest is BaseSetup {
         vm.prank(trader2);
         matchingEngine.limitSell(address(token1), address(token2), 1e8, 100e18, true, 2, trader2);
 
+        // Compute the expected pool gain from the contract's own fee rate rather than
+        // hardcoding it, so this stays correct if defaults ever change. The pool's limitBuy
+        // is placed before trader2's limitSell, so the pool's order rests as maker and the
+        // MAKER fee applies to the base leg (to == pool).
+        uint32 baseFeeRate = matchingEngine.feeOf(address(token1), address(token2), address(this), true);
+        uint256 amountMatched = 100e18;
+        uint256 expectedFeeAmount = (amountMatched * baseFeeRate) / matchingEngine.DENOM();
+        uint256 expectedPoolShare = (expectedFeeAmount * 50000000) / matchingEngine.DENOM();
+        uint256 expectedPoolGain = (amountMatched - expectedFeeAmount) + expectedPoolShare;
+
         uint256 feeToGain = token2.balanceOf(booker) - feeToBalanceBefore;
         uint256 poolGain = token1.balanceOf(address(this)) - poolBalanceBefore;
 
-        // poolGain here also includes matched trade proceeds, not just the fee share --
-        // the precise fee-only assertion is that feeTo's gain is now smaller than it would be
-        // for the same trade without a registered pool (covered by the ratio check below).
+        assertGt(expectedPoolShare, 0); // sanity: the fee split this test exists to verify must be nonzero
+        assertEq(poolGain, expectedPoolGain); // proves the pool received trade proceeds AND its fee share -- would fail if the split were missing or miscomputed
         assertGt(feeToGain, 0);
-        assertGt(poolGain, 0);
     }
 }
