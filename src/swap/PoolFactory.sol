@@ -21,7 +21,7 @@ contract PoolFactory is IPoolFactory, Initializable, AccessControl {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
-    function initialize(address engine_) public initializer returns (address) {
+    function initialize(address engine_) public initializer onlyRole(DEFAULT_ADMIN_ROLE) returns (address) {
         engine = engine_;
         _createImpl();
         return impl;

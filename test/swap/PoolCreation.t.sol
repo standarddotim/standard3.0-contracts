@@ -1,5 +1,5 @@
-// contracts/test/swap/PoolCreation.t.sol
-pragma solidity >=0.8;
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity ^0.8.24;
 
 import {BaseSetup} from "../exchange/OrderbookBaseSetup.sol";
 import {Orderbook} from "../../src/exchange/orderbooks/Orderbook.sol";
