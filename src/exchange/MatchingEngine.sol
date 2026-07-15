@@ -10,6 +10,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IMatchingEngine} from "./interfaces/IMatchingEngine.sol";
 import {MatchingLib} from "./libraries/MatchingLib.sol";
+import {IPoolFactory} from "../swap/interfaces/IPoolFactory.sol";
 
 interface IProtocol {
     function feeOf(
@@ -47,6 +48,7 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     uint32 public poolFeeShare;
     // Factories
     address public orderbookFactory;
+    address public poolFactory;
     // WETH
     address public WETH;
     // default buy spread
@@ -231,6 +233,13 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool success) {
         require(poolFeeShare_ <= DENOM, "poolFeeShare exceeds DENOM");
         poolFeeShare = poolFeeShare_;
+        return true;
+    }
+
+    function setPoolFactory(
+        address poolFactory_
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool success) {
+        poolFactory = poolFactory_;
         return true;
     }
 
@@ -1160,6 +1169,10 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         // create orderbook for the pair
         pair = IOrderbookFactory(orderbookFactory).createBook(base, quote);
         IOrderbook(pair).setLmp(listingPrice);
+        if (poolFactory != address(0)) {
+            address pool = IPoolFactory(poolFactory).createPool(base, quote, pair);
+            IOrderbook(pair).setPool(pool);
+        }
         // set buy/sell spread to default suspension rate in basis point(bps)
         _setSpread(pair, dfltMktBuy, dfltMktSell, true);
         _setSpread(pair, dfltLmtBuy, dfltLmtSEll, false);

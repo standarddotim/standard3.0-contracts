@@ -95,6 +95,10 @@ interface IMatchingEngine {
 
     function poolFeeShare() external view returns (uint32);
 
+    function setPoolFactory(address poolFactory_) external returns (bool success);
+
+    function poolFactory() external view returns (address);
+
     function setDefaultSpread(uint32 buy, uint32 sell, bool isMkt) external returns (bool success);
 
     function setSpread(address base, address quote, uint32 buy, uint32 sell, bool isMkt)
