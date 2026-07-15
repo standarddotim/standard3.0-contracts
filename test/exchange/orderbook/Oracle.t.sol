@@ -36,6 +36,20 @@ contract OracleTest is Test {
         harness.write(1000, 100);
     }
 
+    /// @notice The very first `write` call lands in the same block `initialize` seeded slot 0
+    /// in -- the listing sequence relies on this being a safe no-op (the seed observation must
+    /// survive untouched, not get silently overwritten by the first real write racing it in the
+    /// same block).
+    function testFirstWriteInSameBlockAsInitializeIsANoOp() public {
+        harness.initialize(1000);
+        harness.write(1000, 999999); // same timestamp as initialize
+        assertEq(harness.index(), 0); // did not advance
+        (uint32 ts, uint256 cum, bool initialized) = harness.observationAt(0);
+        assertEq(ts, 1000);
+        assertEq(cum, 0); // untouched by the throttled write's price argument
+        assertTrue(initialized);
+    }
+
     function testWriteThrottlesToOncePerBlock() public {
         harness.initialize(1000);
         harness.write(1100, 100); // index -> 1, cumulative = 100 * 100 = 10000
@@ -59,6 +73,30 @@ contract OracleTest is Test {
         (uint256 price, uint32 window) = harness.twap(1600, 100, 500);
         assertEq(price, 100);
         assertEq(window, 600); // actual window is the full retained history, >= requested 500
+    }
+
+    /// @notice Every other twap test in this file resolves `_findAtLeast`'s binary search to the
+    /// oldest retained observation (logical position 0) -- including the 512-write wraparound
+    /// test below, which just moves *which* observation counts as "oldest". None of them
+    /// exercise the search actually landing on an *interior* observation, which is where the
+    /// library's own docstring says the load-bearing `mid = (lo+hi+1)/2` lo/hi bias lives. This
+    /// test constructs six observations spaced 100s apart and requests a window that must
+    /// resolve to the middle one (neither oldest nor newest).
+    function testTwapFindsAnInteriorObservationNotJustOldestOrNewest() public {
+        harness.initialize(0);
+        for (uint32 t = 100; t <= 500; t += 100) {
+            harness.write(t, 100); // constant price -- isolates the search target, not the math
+        }
+        // Six observations at t = 0, 100, 200, 300, 400, 500 (logical positions 0..5). Querying
+        // "now" = 500 with minSecondsAgo = 250: ages are 500,400,300,200,100,0 for positions
+        // 0..5 respectively. Position 2 (t=200, age=300) is the newest one still >= 250 old;
+        // position 3 (t=300, age=200) is not. So the target must be position 2 -- interior,
+        // not position 0 (oldest) or position 5 (newest).
+        (uint256 price, uint32 window) = harness.twap(500, 100, 250);
+        // cumulative(200)=100*200=20000, cumulative(500)=100*500=50000.
+        // (50000-20000)/(500-200) = 30000/300 = 100.
+        assertEq(price, 100);
+        assertEq(window, 300); // 500 - 200, confirming the target was t=200 (position 2), not t=0
     }
 
     function testTwapReflectsWeightedAverageAcrossPriceChanges() public {

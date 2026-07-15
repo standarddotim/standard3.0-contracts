@@ -28,7 +28,9 @@ contract PriceOracleTest is BaseSetup {
     function testTwapRevertsRightAfterListing() public {
         // Listing itself calls setLmp(100e8), seeding the buffer -- but zero time has passed,
         // so there's no valid window yet.
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(Oracle.InsufficientHistory.selector, uint32(1), uint32(0))
+        );
         book.twap(1);
     }
 
