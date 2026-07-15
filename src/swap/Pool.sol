@@ -343,7 +343,10 @@ contract Pool is IPool, Initializable {
             uint256 grossLpProceeds = IOrderbook(orderbook).convert(boundPrice, matchedLpAmount, quoteToBase);
             uint256 lpFee = (grossLpProceeds * makerFeeRate) / DENOM;
             uint256 poolShareOfFee = (lpFee * IMatchingEngine(engine).poolFeeShare()) / DENOM;
-            uint256 lpPrincipalReceived = grossLpProceeds - lpFee + poolShareOfFee;
+            // Principal leg only -- poolShareOfFee is routed separately via creditFee below,
+            // so folding it in here as well would double-credit it (once into principal,
+            // once into feeOwedQuote/feeOwedBase).
+            uint256 lpPrincipalReceived = grossLpProceeds - lpFee;
 
             _settlePositionContributions(positionIds, contributions, quoteToBase, matchedLpAmount, lpPrincipalReceived);
 

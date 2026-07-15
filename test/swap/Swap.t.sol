@@ -92,6 +92,21 @@ contract SwapTest is PoolBaseSetup {
 
         IPool.Position memory before = pool.getPosition(positionId);
 
+        // Independently compute the expected principal/fee split via the same primitives
+        // Pool.swap uses internally, but as a separate call path -- a loose assertGt/assertLt
+        // here previously passed even when an earlier version of this task's implementation
+        // double-credited poolShareOfFee (once folded into principal via
+        // lpPrincipalReceived, again separately via creditFee -- see the comment at that
+        // line in Step 3). An exact conservation check is what actually catches that class
+        // of defect; a nonzero-only check does not.
+        uint256 boundPrice = (100e8 * (1e8 + 5000000)) / 1e8;
+        uint256 matchedLpAmount = book.convert(boundPrice, 100e18, false); // quote->base, full fill
+        uint32 makerFeeRate = matchingEngine.feeOf(address(token1), address(token2), address(pool), true);
+        uint256 grossLpProceeds = book.convert(boundPrice, matchedLpAmount, true); // base->quote
+        uint256 lpFee = (grossLpProceeds * makerFeeRate) / matchingEngine.DENOM();
+        uint256 expectedPoolShareOfFee = (lpFee * matchingEngine.poolFeeShare()) / matchingEngine.DENOM();
+        uint256 expectedPrincipal = grossLpProceeds - lpFee;
+
         vm.prank(trader1);
         token2.approve(address(pool), 100e18);
         vm.prank(trader1);
@@ -101,10 +116,19 @@ contract SwapTest is PoolBaseSetup {
         // Position sold base (quoteToBase=true -> LP leg limitSell's base), so baseAmount
         // must have decreased and quoteAmount (principal received back) must have increased.
         assertLt(afterSwap.baseAmount, before.baseAmount);
-        assertGt(afterSwap.quoteAmount, before.quoteAmount);
+        assertEq(afterSwap.quoteAmount, before.quoteAmount + expectedPrincipal);
         // With poolFeeShare > 0 and this being the sole contributing position, it should
-        // have received a nonzero fee reward on the quote side (see swap()'s isBaseFee
-        // = !quoteToBase convention).
-        assertGt(afterSwap.feeOwedQuote, 0);
+        // have received exactly its computed share as a fee reward on the quote side (see
+        // swap()'s isBaseFee = !quoteToBase convention) -- an exact check, not nonzero-only.
+        assertEq(afterSwap.feeOwedQuote, expectedPoolShareOfFee);
+        // Conservation: what got credited to this position across both fields must equal
+        // exactly what Pool actually received from the match (Orderbook._sendFunds's
+        // withoutFee + poolShare, both sent to Pool as the LP leg's order owner when
+        // poolFeeShare > 0 -- Task 4). This is the check that directly catches the
+        // double-credit bug class, independent of the exact fee-split numbers above.
+        assertEq(
+            (afterSwap.quoteAmount - before.quoteAmount) + afterSwap.feeOwedQuote,
+            grossLpProceeds - lpFee + expectedPoolShareOfFee
+        );
     }
 }
