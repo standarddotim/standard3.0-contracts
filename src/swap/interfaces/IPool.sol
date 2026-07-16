@@ -30,6 +30,7 @@ interface IPool {
         uint256 amountOut,
         uint256 leftoverIn
     );
+    event PositionDeactivated(uint256 indexed positionId);
 
     error OnlyPositionManager(address caller, address positionManager);
     error PositionDoesNotExist(uint256 positionId);
@@ -71,4 +72,6 @@ interface IPool {
     function getPosition(uint256 positionId) external view returns (Position memory);
 
     function getBaseQuote() external view returns (address base, address quote);
+
+    function activePositionsLength() external view returns (uint256);
 }

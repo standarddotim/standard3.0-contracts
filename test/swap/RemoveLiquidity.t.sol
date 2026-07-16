@@ -30,14 +30,20 @@ contract RemoveLiquidityTest is PoolBaseSetup {
         assertEq(token1.balanceOf(lp1), balBefore + 200e18);
     }
 
-    function testFullRemoveZeroesBalancesButKeepsPositionActive() public {
+    function testFullRemoveZeroesBalancesAndRetiresPosition() public {
         vm.prank(positionManager);
         pool.removeLiquidity(positionId, 500e18, 500e18, lp1);
 
         IPool.Position memory p = pool.getPosition(positionId);
         assertEq(p.baseAmount, 0);
         assertEq(p.quoteAmount, 0);
-        assertTrue(p.active); // still active -- burn is a separate, explicit PositionManager step (Task 14)
+        // I2 (docs/swap/2026-07-17-i2-position-lifecycle-design.md): a full drain with no
+        // fees owed retires the position immediately -- it can never regain balance, so
+        // keeping it active only made every future swap pay to scan it. This test
+        // previously asserted the old keep-active behavior; updated deliberately, not
+        // silently, per the design doc's "behavior changes" section.
+        assertFalse(p.active);
+        assertEq(pool.activePositionsLength(), 0);
     }
 
     function testRemoveMoreThanAvailableReverts() public {

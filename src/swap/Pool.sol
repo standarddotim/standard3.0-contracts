@@ -20,6 +20,12 @@ contract Pool is IPool, Initializable {
 
     uint256 public nextPositionId;
     mapping(uint256 => Position) public positions;
+    // I2 fix (docs/swap/2026-07-17-i2-position-lifecycle-design.md): index of live
+    // position ids so the swap-time scan is O(live positions), not O(every position ever
+    // created). Invariant: positions[id].active == true <=> activeIds[idxInActive[id]] == id.
+    // idxInActive is only meaningful while the position is active.
+    uint256[] internal activeIds;
+    mapping(uint256 => uint256) internal idxInActive;
     uint32 public constant MAX_POSITIONS_PER_SWAP = 20;
     uint32 public constant DENOM = 100000000;
     uint32 public constant TWAP_WINDOW = 600; // seconds
@@ -93,6 +99,8 @@ contract Pool is IPool, Initializable {
             feeOwedQuote: 0,
             active: true
         });
+        idxInActive[positionId] = activeIds.length;
+        activeIds.push(positionId);
 
         emit LiquidityAdded(positionId, minPrice, maxPrice, slippageLimit, baseAmount, quoteAmount);
     }
@@ -117,6 +125,7 @@ contract Pool is IPool, Initializable {
         if (quoteAmount > 0) TransferHelper.safeTransfer(quote, recipient, quoteAmount);
 
         emit LiquidityRemoved(positionId, baseAmount, quoteAmount);
+        _deactivateIfDead(positionId);
     }
 
     function collect(uint256 positionId, address recipient)
@@ -136,6 +145,7 @@ contract Pool is IPool, Initializable {
         if (quoteFee > 0) TransferHelper.safeTransfer(quote, recipient, quoteFee);
 
         emit FeeCollected(positionId, baseFee, quoteFee);
+        _deactivateIfDead(positionId);
     }
 
     function creditFee(uint256[] calldata positionIds, uint256[] calldata shares, bool isBaseFee, uint256 totalFee)
@@ -436,6 +446,34 @@ contract Pool is IPool, Initializable {
                 positions[positionIds[i]].quoteAmount -= suppliedUsed;
                 positions[positionIds[i]].baseAmount += receivedCredit;
             }
+        }
+    }
+
+    function activePositionsLength() external view returns (uint256) {
+        return activeIds.length;
+    }
+
+    // Retire a position once it is economically dead: zero principal on both sides AND
+    // zero fees owed. A drained position with pending fees stays active so collect keeps
+    // working; it retires when collect zeroes the fees. Once retired, no code path can
+    // credit an inactive position again (swap settlement only touches ids assembled from
+    // the active set, and fee crediting runs before the retirement sweep in _settleLpLeg),
+    // so retirement is permanent. The p.active guard makes this idempotent -- a reentrant
+    // or repeated call is a no-op, never a double swap-and-pop.
+    function _deactivateIfDead(uint256 positionId) internal {
+        Position storage p = positions[positionId];
+        if (
+            p.active && p.baseAmount == 0 && p.quoteAmount == 0 && p.feeOwedBase == 0
+                && p.feeOwedQuote == 0
+        ) {
+            p.active = false;
+            uint256 idx = idxInActive[positionId];
+            uint256 lastId = activeIds[activeIds.length - 1];
+            activeIds[idx] = lastId;
+            idxInActive[lastId] = idx;
+            activeIds.pop();
+            delete idxInActive[positionId];
+            emit PositionDeactivated(positionId);
         }
     }
 
