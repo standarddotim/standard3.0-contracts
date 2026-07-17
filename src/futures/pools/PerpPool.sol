@@ -49,6 +49,7 @@ contract PerpPool is IPerpPool, Initializable {
     );
     event PositionClosed(uint256 indexed positionId, address indexed trader, uint256 exitPrice, int256 pnl, uint256 payout);
     event PositionLiquidated(uint256 indexed positionId, address indexed trader, uint256 markPrice, uint256 feeFund, uint256 poolFund);
+    event ReserveSeeded(address indexed token, address indexed funder, uint256 amount);
 
     error CollateralNotAccepted(address token);
     error LeverageLimitExceeded(uint32 leverage, uint32 maxLeverage_);
@@ -95,6 +96,25 @@ contract PerpPool is IPerpPool, Initializable {
 
     // --- interface-completeness stubs; real implementations land in Tasks 4-6 ---
 
+    // Phase 1 backing capital is operator-seeded and non-redeemable until LP share accounting
+    // lands (documented fast-follow). This is deliberately admin-only (gated behind
+    // onlyPerpEngine, same as openPosition -- the real PerpEngine contract will expose an
+    // admin-gated passthrough in Task 7) so no third-party funds can get stranded in a pool
+    // that has no withdrawal path yet.
+    function seedReserve(address token, uint256 amount, address funder) external onlyPerpEngine {
+        if (!isAcceptedCollateral[token]) {
+            revert CollateralNotAccepted(token);
+        }
+        if (amount == 0) {
+            revert AmountIsZero();
+        }
+
+        TransferHelper.safeTransferFrom(token, funder, address(this), amount);
+        reserveOf[token] += amount;
+
+        emit ReserveSeeded(token, funder, amount);
+    }
+
     function openPosition(bool isLong, address collateralToken, uint256 collateralAmount, uint32 leverage, address trader)
         external
         override
@@ -116,9 +136,6 @@ contract PerpPool is IPerpPool, Initializable {
             revert InsufficientSpotLiquidity(spotLiquidity, minSpotLiquidity);
         }
 
-        TransferHelper.safeTransferFrom(collateralToken, trader, address(this), collateralAmount);
-        reserveOf[collateralToken] += collateralAmount;
-
         uint256 entryPrice = IMatchingEnginePrice(market.matchingEngine).mktPrice(market.base, market.quote);
         if (entryPrice == 0) {
             revert PriceIsZero(entryPrice);
@@ -127,11 +144,19 @@ contract PerpPool is IPerpPool, Initializable {
         uint256 marginQuote = _toQuoteValue(collateralToken, collateralAmount);
         uint256 notional = marginQuote * leverage;
 
+        // Cap check runs against the reserve BEFORE this trader's deposit lands, so a trader's
+        // own just-deposited margin never counts toward their own cap. Known Phase 1 limitation:
+        // margin deposited by EARLIER opens still sits in reserveOf and counts toward later
+        // traders' caps -- separating margin from backing capital is part of the LP-share
+        // fast-follow.
         uint256 sideOI = isLong ? longOpenInterest : shortOpenInterest;
         uint256 cap = (_totalReserveInQuote() * maxUtilizationBps) / 10000;
         if (sideOI + notional > cap) {
             revert OpenInterestCapExceeded(sideOI + notional, cap);
         }
+
+        TransferHelper.safeTransferFrom(collateralToken, trader, address(this), collateralAmount);
+        reserveOf[collateralToken] += collateralAmount;
 
         positionCount += 1;
         positionId = positionCount;

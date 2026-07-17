@@ -30,6 +30,8 @@ interface IPerpPool {
         external
         returns (uint256 positionId);
 
+    function seedReserve(address token, uint256 amount, address funder) external;
+
     function closePosition(uint256 positionId, address trader) external returns (int256 pnl, uint256 payout);
 
     function liquidate(uint256 positionId) external returns (uint256 feeFund, uint256 poolFund);

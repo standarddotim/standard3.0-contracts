@@ -6,11 +6,6 @@ import {PerpPool} from "../../../src/futures/pools/PerpPool.sol";
 import {IPerpPool} from "../../../src/futures/interfaces/IPerpPool.sol";
 import {MockToken} from "../../../src/mock/MockToken.sol";
 
-interface IMatchingEngineMock {
-    function mktPrice(address base, address quote) external view returns (uint256);
-    function getPair(address base, address quote) external view returns (address);
-}
-
 // Minimal mock standing in for MatchingEngine's price-lookup surface, plus a fake spot pool
 // whose token balance PerpPool reads for the spot-liquidity gate.
 contract MockMatchingEngine {
@@ -49,19 +44,14 @@ contract MockOrderbook {
 contract PerpPoolOpenPositionTest is PerpPoolUnitSetup {
     PerpPool pool;
     MockMatchingEngine mockEngine;
-    MockOrderbook mockOrderbook;
-    MockToken spotLiquidityHolder;
+
+    address seeder = address(0x5EED);
 
     function setUp() public {
-        // maxUtilizationBps is set to 80000 (800%), not the "production-flavored" 8000 (80%)
-        // used elsewhere (e.g. Init.t.sol). Phase 1's _totalReserveInQuote() treats a trader's
-        // own just-deposited margin as pool reserve (see its doc comment), so a fresh pool's
-        // very first leveraged open is self-referential: notional = margin*leverage while
-        // cap = (margin)*maxUtilizationBps/10000, and no leverage>=1 can ever pass an 80% cap
-        // when the position's own margin is its only backing. 800% keeps leverage-5 opens
-        // (as used below) comfortably under cap while still leaving Step 3's cap formula
-        // breachable by a second, sufficiently large/leveraged position -- see the OI-cap test.
-        address poolAddr = setUpPool(10, 80000, 1000e18);
+        // Realistic production-flavored default: 8000 bps (80%) utilization, matching Init.t.sol
+        // and the plan's actual default. The pool must be seeded with operator-provided backing
+        // capital before any trader can open a position -- see seedReserve on PerpPool.
+        address poolAddr = setUpPool(10, 8000, 1000e18);
         pool = PerpPool(poolAddr);
 
         // Redeploy setUpPool's matchingEngine as a real mock at the address PerpPool already
@@ -72,12 +62,20 @@ contract PerpPoolOpenPositionTest is PerpPoolUnitSetup {
         vm.etch(matchingEngine, address(deployed).code);
 
         // fake spot pool holding quote liquidity, registered behind a fake orderbook
-        spotLiquidityHolder = quoteToken;
         MockOrderbook ob = new MockOrderbook(address(this));
         MockMatchingEngine(matchingEngine).setPair(address(baseToken), address(quoteToken), address(ob));
 
         MockMatchingEngine(matchingEngine).setPrice(address(baseToken), address(quoteToken), 100e8); // $100
         quoteToken.mint(address(this), 5000e18); // this test contract IS the fake spot pool
+
+        // Seed the pool with operator backing capital before any trader acts. 10000e18 seed ->
+        // cap = 10000e18 * 8000 / 10000 = 8000e18, comfortably covering the happy-path tests'
+        // notional (e.g. trader1's 100e18 * 5 = 500e18).
+        quoteToken.mint(seeder, 10000e18);
+        vm.prank(seeder);
+        quoteToken.approve(address(pool), 10000e18);
+        vm.prank(perpEngine);
+        pool.seedReserve(address(quoteToken), 10000e18, seeder);
 
         quoteToken.mint(trader1, 20000e18);
         vm.prank(trader1);
@@ -87,13 +85,14 @@ contract PerpPoolOpenPositionTest is PerpPoolUnitSetup {
     function testOpenPositionTransfersRealCollateral() public {
         uint256 poolBalBefore = quoteToken.balanceOf(address(pool));
         uint256 traderBalBefore = quoteToken.balanceOf(trader1);
+        uint256 reserveBefore = pool.reserveOf(address(quoteToken));
 
         vm.prank(perpEngine);
         pool.openPosition(true, address(quoteToken), 100e18, 5, trader1);
 
         assertEq(quoteToken.balanceOf(address(pool)), poolBalBefore + 100e18);
         assertEq(quoteToken.balanceOf(trader1), traderBalBefore - 100e18);
-        assertEq(pool.reserveOf(address(quoteToken)), 100e18);
+        assertEq(pool.reserveOf(address(quoteToken)), reserveBefore + 100e18);
     }
 
     function testOpenPositionSizesNotionalFromMarginTimesLeverage() public {
@@ -141,22 +140,64 @@ contract PerpPoolOpenPositionTest is PerpPoolUnitSetup {
     }
 
     function testOpenPositionRevertsWhenOpenInterestCapExceeded() public {
-        // reserve is 0 until this trader deposits; cap = reserve * maxUtilizationBps / 10000, so a
-        // fresh pool with no prior reserve can't support any leveraged notional on the first open
-        // beyond its own just-deposited margin. Use a second, well-funded trader to seed the
-        // reserve first, at 6x leverage (comfortably under the pool's 8x cap multiplier so this
-        // seed itself succeeds with headroom -- cap=80000e18, OI=60000e18 after this call).
-        quoteToken.mint(trader2, 10000e18);
-        vm.prank(trader2);
-        quoteToken.approve(address(pool), 10000e18);
+        // Pool was seeded with 10000e18 in setUp -> cap = 10000e18 * 8000 / 10000 = 8000e18.
+        // Attempt a position whose notional alone breaches that cap: 1000e18 margin * 10x
+        // leverage = 10000e18 notional > 8000e18 cap.
         vm.prank(perpEngine);
-        pool.openPosition(true, address(quoteToken), 10000e18, 6, trader2); // seeds reserve=10000e18, OI=60000e18
+        vm.expectRevert(abi.encodeWithSelector(PerpPool.OpenInterestCapExceeded.selector, 10000e18, 8000e18));
+        pool.openPosition(true, address(quoteToken), 1000e18, 10, trader1);
+    }
 
-        // now attempt a large, max-leverage (10x) position whose notional pushes longOpenInterest
-        // past cap = (reserve_after) * maxUtilizationBps / 10000 = 25000e18 * 8 = 200000e18:
-        // sideOI(60000e18) + notional(15000e18*10=150000e18) = 210000e18 > 200000e18 cap.
+    function testFirstPositionOpensOnSeededPoolAtDefaultUtilization() public {
+        // The exact regression scenario the review demanded: a plain first open at the
+        // realistic 8000 bps default utilization on a seeded pool must succeed -- this was
+        // mathematically impossible before the seedReserve + pre-deposit cap check fix.
         vm.prank(perpEngine);
+        uint256 id = pool.openPosition(true, address(quoteToken), 100e18, 5, trader1);
+
+        IPerpPool.Position memory p = pool.getPosition(id);
+        assertEq(p.margin, 100e18);
+        assertEq(pool.longOpenInterest(), 500e18);
+    }
+
+    function testOpenPositionRevertsOnUnseededPool() public {
+        // A second pool from the same factory, deliberately left unseeded, must refuse any
+        // leveraged open -- an unfunded pool correctly declines to take on risk. This documents
+        // intended behavior, not a bug. PerpPoolFactory keys pools by (base, quote), so a fresh
+        // base/quote pair is needed to avoid PoolAlreadyExists against the seeded pool from
+        // setUp().
+        MockToken base2 = new MockToken("Base2", "BASE2", 18);
+        MockToken quote2 = new MockToken("Quote2", "QUOTE2", 18);
+        address[] memory collaterals = new address[](1);
+        collaterals[0] = address(quote2);
+
+        vm.prank(perpEngine);
+        address unseededPoolAddr =
+            factory.createPerpPool(address(base2), address(quote2), collaterals, 10, 8000, 1000e18);
+        PerpPool unseededPool = PerpPool(unseededPoolAddr);
+
+        // Wire up the same matchingEngine mock (shared across pools from this factory) with a
+        // price and spot-liquidity pair for the new base2/quote2 market so the cap check --
+        // not an earlier price/liquidity gate -- is what this test actually exercises.
+        MockMatchingEngine(matchingEngine).setPrice(address(base2), address(quote2), 100e8);
+        MockOrderbook ob2 = new MockOrderbook(address(this));
+        MockMatchingEngine(matchingEngine).setPair(address(base2), address(quote2), address(ob2));
+        quote2.mint(address(this), 5000e18); // this test contract is the fake spot pool for ob2 too
+
+        quote2.mint(trader1, 100e18);
+        vm.prank(trader1);
+        quote2.approve(address(unseededPool), 100e18);
+
+        vm.prank(perpEngine);
+        vm.expectRevert(abi.encodeWithSelector(PerpPool.OpenInterestCapExceeded.selector, 500e18, 0));
+        unseededPool.openPosition(true, address(quote2), 100e18, 5, trader1);
+    }
+
+    function testSeedReserveOnlyCallableByPerpEngine() public {
+        quoteToken.mint(address(this), 100e18);
+        quoteToken.approve(address(pool), 100e18);
+
         vm.expectRevert();
-        pool.openPosition(true, address(quoteToken), 15000e18, 10, trader1);
+        pool.seedReserve(address(quoteToken), 100e18, address(this));
     }
 }
