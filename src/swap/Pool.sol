@@ -376,27 +376,39 @@ contract Pool is IPool, Initializable {
         uint32 count = 0;
         minSlippage = type(uint32).max;
 
-        bool[] memory used = new bool[](nextPositionId + 1);
+        // I2 fix: iterate only live positions -- one storage read of the id list up
+        // front, then 20 selection passes over memory. Both the scan and the scratch
+        // buffer are sized by the LIVE count; the old `1..nextPositionId` loop and its
+        // `new bool[](nextPositionId + 1)` buffer each grew forever with dead history.
+        // Tie-break nuance vs the old code: positions are visited in activeIds order
+        // (permuted by swap-and-pop), not ascending id order, so among >20 in-range
+        // positions with IDENTICAL slippageLimit the selected subset can differ from the
+        // old code's. Selection is still tightest-slippage-first; contribution math is
+        // order-independent.
+        uint256[] memory ids = activeIds;
+        bool[] memory used = new bool[](ids.length);
 
         for (uint32 pass = 0; pass < MAX_POSITIONS_PER_SWAP; pass++) {
-            uint256 bestId = 0;
+            uint256 bestK = type(uint256).max;
             uint32 bestSlippage = type(uint32).max;
 
-            for (uint256 i = 1; i <= nextPositionId; i++) {
-                Position storage p = positions[i];
-                if (!p.active || used[i]) continue;
+            for (uint256 k = 0; k < ids.length; k++) {
+                if (used[k]) continue;
+                Position storage p = positions[ids[k]];
+                if (!p.active) continue; // belt-and-braces; the activeIds invariant makes this redundant
                 if (p.minPrice > marketPrice || p.maxPrice < marketPrice) continue;
                 uint256 available = quoteToBase ? p.baseAmount : p.quoteAmount;
                 if (available == 0) continue;
                 if (p.slippageLimit < bestSlippage) {
                     bestSlippage = p.slippageLimit;
-                    bestId = i;
+                    bestK = k;
                 }
             }
 
-            if (bestId == 0) break;
+            if (bestK == type(uint256).max) break;
 
-            used[bestId] = true;
+            used[bestK] = true;
+            uint256 bestId = ids[bestK];
             uint256 contribution = quoteToBase ? positions[bestId].baseAmount : positions[bestId].quoteAmount;
             idsBuf[count] = bestId;
             contribBuf[count] = contribution;

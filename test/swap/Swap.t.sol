@@ -203,4 +203,25 @@ contract SwapTest is PoolBaseSetup {
         uint256 lpFee = (grossLpProceeds * makerFeeRate) / matchingEngine.DENOM();
         assertEq(afterSwap.quoteAmount, before.quoteAmount + grossLpProceeds - lpFee);
     }
+
+    function testSwapSelectsFromCompactedActiveSetAfterRetirement() public {
+        // Add a second position, then fully drain the FIRST (setUp's) so it retires and
+        // activeIds swap-and-pops -- the surviving position now lives at array slot 0,
+        // not the slot it was pushed to. The swap must still find and use it.
+        vm.prank(positionManager);
+        uint256 secondId = pool.addLiquidity(50e8, 150e8, 5000000, 500e18, 500e18, lp1);
+
+        vm.prank(positionManager);
+        pool.removeLiquidity(positionId, 1000e18, 1000e18, lp1);
+        assertEq(pool.activePositionsLength(), 1);
+
+        vm.prank(trader1);
+        token2.approve(address(pool), 100e18);
+        vm.prank(trader1);
+        (uint256 amountOut,) = pool.swap(100e18, true, trader1, false);
+
+        assertGt(amountOut, 0);
+        IPool.Position memory p = pool.getPosition(secondId);
+        assertLt(p.baseAmount, 500e18); // the survivor is the position that supplied the swap
+    }
 }
