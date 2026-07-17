@@ -3,7 +3,7 @@
 pragma solidity ^0.8.24;
 
 import {IPerpPoolFactory} from "./interfaces/IPerpPoolFactory.sol";
-import {IPerpPool, FuturesPool} from "./interfaces/IPerpPool.sol";
+import {IPerpPool} from "./interfaces/IPerpPool.sol";
 import {TransferHelper} from "./libraries/TransferHelper.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -400,23 +400,6 @@ contract PerpFutures is ReentrancyGuard, AccessControl {
             refunded[i] = closePosition(base[i], quote[i], collateral[i], isLong[i], positionIds[i]);
         }
         return refunded;
-    }
-
-    /**
-     * @dev Returns an position in the ask/bid positionbook for the given trading pair with position id.
-     * @param base The address of the base asset for the futures pool.
-     * @param quote The address of the quote asset for the futures pool.
-     * @param collateral The address of the collateral asset for the futures pool.
-     * @param isLong Boolean indicating if the positionbook to retrieve positions from is an ask positionbook.
-     * @param positionId The position id to retrieve.
-     */
-    function getPosition(address base, address quote, address collateral, bool isLong, uint32 positionId)
-        public
-        view
-        returns (FuturesPool.Position memory)
-    {
-        address pool = getPool(base, quote, collateral);
-        return IPerpPool(pool).getPosition(isLong, positionId);
     }
 
     /**

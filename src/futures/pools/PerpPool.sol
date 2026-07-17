@@ -5,7 +5,6 @@ pragma solidity ^0.8.24;
 import {IPerpPool} from "../interfaces/IPerpPool.sol";
 import {Initializable} from "../../security/Initializable.sol";
 import {TransferHelper} from "../libraries/TransferHelper.sol";
-import {FuturesPool} from "../libraries/FuturesPool.sol";
 
 interface IWETHMinimal {
     function WETH() external view returns (address);
@@ -16,8 +15,6 @@ interface IWETHMinimal {
 }
 
 contract PerpPool is IPerpPool, Initializable {
-    using FuturesPool for FuturesPool.PositionStorage;
-
     // Pool Struct
     struct Pool {
         uint256 id;
@@ -31,9 +28,6 @@ contract PerpPool is IPerpPool, Initializable {
     Pool private pool;
 
     uint256 collateralOne;
-
-    FuturesPool.PositionStorage private _shortPositions;
-    FuturesPool.PositionStorage private _longPositions;
 
     error InvalidDecimals(uint8 base, uint8 quote);
     error InvalidAccess(address sender, address allowed);
@@ -65,8 +59,7 @@ contract PerpPool is IPerpPool, Initializable {
         onlyEngine
         returns (uint32 id)
     {
-        _shortPositions._createPosition(owner, price, amount, leverage, autoUpdate);
-        return id;
+        revert("PerpPool: not yet implemented, see Task 2");
     }
 
     function placeLong(address owner, uint256 price, uint256 amount, uint32 leverage, bool autoUpdate)
@@ -74,8 +67,7 @@ contract PerpPool is IPerpPool, Initializable {
         onlyEngine
         returns (uint32 id)
     {
-        _longPositions._createPosition(owner, price, amount, leverage, autoUpdate);
-        return id;
+        revert("PerpPool: not yet implemented, see Task 2");
     }
 
     function closePosition(bool isLong, uint256 positionId, address owner)
@@ -83,31 +75,11 @@ contract PerpPool is IPerpPool, Initializable {
         onlyEngine
         returns (uint256 remaining)
     {
-        // check position owner
-        FuturesPool.Position memory position =
-            isLong ? _longPositions._getPosition(positionId) : _shortPositions._getPosition(positionId);
-
-        if (position.owner != owner) {
-            revert InvalidAccess(owner, position.owner);
-        }
-
-        isLong ? _sendFunds(pool.quote, owner, position.margin) : _sendFunds(pool.base, owner, position.margin);
-
-        return (position.margin);
+        revert("PerpPool: not yet implemented, see Task 2");
     }
 
     function liquidate(bool isLong, uint32 positionId) public onlyEngine returns (address owner) {
-        FuturesPool.Position memory position =
-            isLong ? _longPositions._getPosition(positionId) : _shortPositions._getPosition(positionId);
-        // if isLong == true, sender is matching ask position with bid position(i.e. selling base to receive quote), otherwise sender is matching bid position with ask position(i.e. buying base with quote)
-        if (isLong) {
-            _longPositions._liquidate(positionId);
-        }
-        // if the position is bid position on the base/quote pool
-        else {
-            _shortPositions._liquidate(positionId);
-        }
-        return position.owner;
+        revert("PerpPool: not yet implemented, see Task 2");
     }
 
     function batchLiquidate(bool[] memory isLong, uint32[] memory positionId)
@@ -133,10 +105,6 @@ contract PerpPool is IPerpPool, Initializable {
 
     function _absdiff(uint8 a, uint8 b) internal pure returns (uint8, bool) {
         return (a > b ? a - b : b - a, a > b);
-    }
-
-    function getPosition(bool isLong, uint32 positionId) external view returns (FuturesPool.Position memory) {
-        return isLong ? _longPositions._getPosition(positionId) : _shortPositions._getPosition(positionId);
     }
 
     receive() external payable {
