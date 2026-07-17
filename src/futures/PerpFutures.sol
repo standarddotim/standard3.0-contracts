@@ -404,22 +404,20 @@ contract PerpFutures is ReentrancyGuard, AccessControl {
 
     /**
      * @dev Returns an position in the ask/bid positionbook for the given trading pair with position id.
-     * Will be reimplemented in Task 2+ with IPerpPool.Position struct.
      * @param base The address of the base asset for the futures pool.
      * @param quote The address of the quote asset for the futures pool.
      * @param collateral The address of the collateral asset for the futures pool.
      * @param isLong Boolean indicating if the positionbook to retrieve positions from is an ask positionbook.
      * @param positionId The position id to retrieve.
      */
-    // function getPosition(address base, address quote, address collateral, bool isLong, uint32 positionId)
-    //     public
-    //     view
-    //     returns (FuturesPool.Position memory)
-    // {
-    //     address pool = getPool(base, quote, collateral);
-    //     return IPerpPool(pool).getPosition(isLong, positionId);
-    // }
-    // REMOVED: Task 1 - Will be reimplemented in Task 2+
+    function getPosition(address base, address quote, address collateral, bool isLong, uint32 positionId)
+        public
+        view
+        returns (FuturesPool.Position memory)
+    {
+        address pool = getPool(base, quote, collateral);
+        return IPerpPool(pool).getPosition(isLong, positionId);
+    }
 
     /**
      * @dev Returns the address of the positionbook for the given base and quote asset addresses.

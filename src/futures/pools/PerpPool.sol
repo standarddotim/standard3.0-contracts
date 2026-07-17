@@ -16,9 +16,7 @@ interface IWETHMinimal {
 }
 
 contract PerpPool is IPerpPool, Initializable {
-    // REMOVED: Task 1 - FuturesPool is now pure-math library, not storage-based
-    // using FuturesPool for FuturesPool.PositionStorage;
-    // Will be reimplemented in Task 2+ with direct position ledger
+    using FuturesPool for FuturesPool.PositionStorage;
 
     // Pool Struct
     struct Pool {
@@ -34,10 +32,8 @@ contract PerpPool is IPerpPool, Initializable {
 
     uint256 collateralOne;
 
-    // REMOVED: Task 1
-    // FuturesPool.PositionStorage private _shortPositions;
-    // FuturesPool.PositionStorage private _longPositions;
-    // Will be replaced with direct position ledger in Task 2+
+    FuturesPool.PositionStorage private _shortPositions;
+    FuturesPool.PositionStorage private _longPositions;
 
     error InvalidDecimals(uint8 base, uint8 quote);
     error InvalidAccess(address sender, address allowed);
@@ -64,60 +60,65 @@ contract PerpPool is IPerpPool, Initializable {
         _;
     }
 
-    // REMOVED: Task 1 - These functions use the old FuturesPool.PositionStorage API
-    // Will be reimplemented in Task 2+ with direct position ledger
-    // function placeShort(address owner, uint256 price, uint256 amount, uint32 leverage, bool autoUpdate)
-    //     external
-    //     onlyEngine
-    //     returns (uint32 id)
-    // {
-    //     _shortPositions._createPosition(owner, price, amount, leverage, autoUpdate);
-    //     return id;
-    // }
-    //
-    // function placeLong(address owner, uint256 price, uint256 amount, uint32 leverage, bool autoUpdate)
-    //     external
-    //     onlyEngine
-    //     returns (uint32 id)
-    // {
-    //     _longPositions._createPosition(owner, price, amount, leverage, autoUpdate);
-    //     return id;
-    // }
-    //
-    // function closePosition(bool isLong, uint256 positionId, address owner)
-    //     external
-    //     onlyEngine
-    //     returns (uint256 remaining)
-    // {
-    //     FuturesPool.Position memory position =
-    //         isLong ? _longPositions._getPosition(positionId) : _shortPositions._getPosition(positionId);
-    //     if (position.owner != owner) {
-    //         revert InvalidAccess(owner, position.owner);
-    //     }
-    //     isLong ? _sendFunds(pool.quote, owner, position.margin) : _sendFunds(pool.base, owner, position.margin);
-    //     return (position.margin);
-    // }
-    //
-    // function liquidate(bool isLong, uint32 positionId) public onlyEngine returns (address owner) {
-    //     FuturesPool.Position memory position =
-    //         isLong ? _longPositions._getPosition(positionId) : _shortPositions._getPosition(positionId);
-    //     if (isLong) {
-    //         _longPositions._liquidate(positionId);
-    //     } else {
-    //         _shortPositions._liquidate(positionId);
-    //     }
-    //     return position.owner;
-    // }
-    //
-    // function batchLiquidate(bool[] memory isLong, uint32[] memory positionId)
-    //     external
-    //     onlyEngine
-    //     returns (address owner)
-    // {
-    //     for (uint256 i = 0; i < positionId.length; i++) {
-    //         liquidate(isLong[i], positionId[i]);
-    //     }
-    // }
+    function placeShort(address owner, uint256 price, uint256 amount, uint32 leverage, bool autoUpdate)
+        external
+        onlyEngine
+        returns (uint32 id)
+    {
+        _shortPositions._createPosition(owner, price, amount, leverage, autoUpdate);
+        return id;
+    }
+
+    function placeLong(address owner, uint256 price, uint256 amount, uint32 leverage, bool autoUpdate)
+        external
+        onlyEngine
+        returns (uint32 id)
+    {
+        _longPositions._createPosition(owner, price, amount, leverage, autoUpdate);
+        return id;
+    }
+
+    function closePosition(bool isLong, uint256 positionId, address owner)
+        external
+        onlyEngine
+        returns (uint256 remaining)
+    {
+        // check position owner
+        FuturesPool.Position memory position =
+            isLong ? _longPositions._getPosition(positionId) : _shortPositions._getPosition(positionId);
+
+        if (position.owner != owner) {
+            revert InvalidAccess(owner, position.owner);
+        }
+
+        isLong ? _sendFunds(pool.quote, owner, position.margin) : _sendFunds(pool.base, owner, position.margin);
+
+        return (position.margin);
+    }
+
+    function liquidate(bool isLong, uint32 positionId) public onlyEngine returns (address owner) {
+        FuturesPool.Position memory position =
+            isLong ? _longPositions._getPosition(positionId) : _shortPositions._getPosition(positionId);
+        // if isLong == true, sender is matching ask position with bid position(i.e. selling base to receive quote), otherwise sender is matching bid position with ask position(i.e. buying base with quote)
+        if (isLong) {
+            _longPositions._liquidate(positionId);
+        }
+        // if the position is bid position on the base/quote pool
+        else {
+            _shortPositions._liquidate(positionId);
+        }
+        return position.owner;
+    }
+
+    function batchLiquidate(bool[] memory isLong, uint32[] memory positionId)
+        external
+        onlyEngine
+        returns (address owner)
+    {
+        for (uint256 i = 0; i < positionId.length; i++) {
+            liquidate(isLong[i], positionId[i]);
+        }
+    }
 
     function _sendFunds(address token, address to, uint256 amount) internal returns (bool) {
         address weth = IWETHMinimal(pool.engine).WETH();
@@ -134,53 +135,29 @@ contract PerpPool is IPerpPool, Initializable {
         return (a > b ? a - b : b - a, a > b);
     }
 
-    // function getPosition(bool isLong, uint32 positionId) external view returns (FuturesPool.Position memory) {
-    //     return isLong ? _longPositions._getPosition(positionId) : _shortPositions._getPosition(positionId);
-    // }
-    // REMOVED: Task 1 - Will be reimplemented in Task 2+ with IPerpPool.Position
+    function getPosition(bool isLong, uint32 positionId) external view returns (FuturesPool.Position memory) {
+        return isLong ? _longPositions._getPosition(positionId) : _shortPositions._getPosition(positionId);
+    }
 
     receive() external payable {
         assert(msg.sender == IWETHMinimal(pool.engine).WETH());
-    }
-
-    // Minimal implementations to satisfy interface requirements (Task 2+ will implement)
-    function closePosition(bool isLong, uint256 positionId, address owner)
-        external
-        override
-        returns (uint256 remaining)
-    {
-        return 0; // REMOVED: Task 1 - Will be reimplemented in Task 2+
-    }
-
-    function liquidate(bool isLong, uint32 positionId)
-        external
-        override
-        returns (address owner)
-    {
-        return address(0); // REMOVED: Task 1 - Will be reimplemented in Task 2+
     }
 
     function placeShort(address owner, uint256 price, uint256 amount, bool autoUpdate)
         external
         override
         returns (uint256 id)
-    {
-        return 0; // REMOVED: Task 1 - Will be reimplemented in Task 2+
-    }
+    {}
 
     function placeLong(address owner, uint256 price, uint256 amount, bool autoUpdate)
         external
         override
         returns (uint256 id)
-    {
-        return 0; // REMOVED: Task 1 - Will be reimplemented in Task 2+
-    }
+    {}
 
     function openPosition(bool isLong, uint256 price, uint256 amount, address owner)
         external
         override
         returns (uint256 id)
-    {
-        return 0; // REMOVED: Task 1 - Will be reimplemented in Task 2+
-    }
+    {}
 }
