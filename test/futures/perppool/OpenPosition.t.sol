@@ -5,41 +5,7 @@ import {PerpPoolUnitSetup} from "../PerpPoolUnitSetup.sol";
 import {PerpPool} from "../../../src/futures/pools/PerpPool.sol";
 import {IPerpPool} from "../../../src/futures/interfaces/IPerpPool.sol";
 import {MockToken} from "../../../src/mock/MockToken.sol";
-
-// Minimal mock standing in for MatchingEngine's price-lookup surface, plus a fake spot pool
-// whose token balance PerpPool reads for the spot-liquidity gate.
-contract MockMatchingEngine {
-    mapping(bytes32 => uint256) public prices;
-    mapping(bytes32 => address) public pairs;
-
-    function setPrice(address base, address quote, uint256 price) external {
-        prices[keccak256(abi.encodePacked(base, quote))] = price;
-    }
-
-    function mktPrice(address base, address quote) external view returns (uint256) {
-        return prices[keccak256(abi.encodePacked(base, quote))];
-    }
-
-    function setPair(address base, address quote, address book) external {
-        pairs[keccak256(abi.encodePacked(base, quote))] = book;
-    }
-
-    function getPair(address base, address quote) external view returns (address) {
-        return pairs[keccak256(abi.encodePacked(base, quote))];
-    }
-}
-
-contract MockOrderbook {
-    address public pool;
-
-    constructor(address pool_) {
-        pool = pool_;
-    }
-
-    function getPool() external view returns (address) {
-        return pool;
-    }
-}
+import {MockMatchingEngine, MockOrderbook} from "../mocks/MockMatchingEngine.sol";
 
 contract PerpPoolOpenPositionTest is PerpPoolUnitSetup {
     PerpPool pool;

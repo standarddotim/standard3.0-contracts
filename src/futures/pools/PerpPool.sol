@@ -189,8 +189,47 @@ contract PerpPool is IPerpPool, Initializable {
         // reserve as the conservative floor so the cap can never be looser than actual backing.
     }
 
-    function closePosition(uint256 positionId, address trader) external returns (int256 pnl, uint256 payout) {
-        revert("PerpPool: not yet implemented, see Task 5");
+    function closePosition(uint256 positionId, address trader) external override onlyPerpEngine returns (int256 pnl, uint256 payout) {
+        Position memory position = positions[positionId];
+        if (position.owner == address(0)) {
+            revert PositionNotFound(positionId);
+        }
+        if (position.owner != trader) {
+            revert NotPositionOwner(trader, position.owner);
+        }
+
+        uint256 exitPrice = IMatchingEnginePrice(market.matchingEngine).mktPrice(market.base, market.quote);
+        if (exitPrice == 0) {
+            revert PriceIsZero(exitPrice);
+        }
+
+        pnl = FuturesPool._pnl(position.margin, position.entryPrice, position.leverage, exitPrice, position.isLong);
+
+        int256 payoutSigned = int256(position.margin) + pnl;
+        payout = payoutSigned > 0 ? uint256(payoutSigned) : 0;
+
+        uint256 payoutInCollateral = _fromQuoteValue(position.collateralToken, payout);
+        uint256 available = reserveOf[position.collateralToken];
+        if (payoutInCollateral > available) {
+            revert InsufficientPoolReserve(payoutInCollateral, available);
+        }
+
+        uint256 notional = position.margin * position.leverage;
+        if (position.isLong) {
+            longOpenInterest -= notional;
+        } else {
+            shortOpenInterest -= notional;
+        }
+
+        delete positions[positionId];
+
+        if (payoutInCollateral > 0) {
+            reserveOf[position.collateralToken] -= payoutInCollateral;
+            TransferHelper.safeTransfer(position.collateralToken, trader, payoutInCollateral);
+        }
+
+        emit PositionClosed(positionId, trader, exitPrice, pnl, payoutInCollateral);
+        return (pnl, payoutInCollateral);
     }
 
     function liquidate(uint256 positionId) external returns (uint256 feeFund, uint256 poolFund) {
