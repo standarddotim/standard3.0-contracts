@@ -3,16 +3,40 @@
 pragma solidity ^0.8.24;
 
 interface IPerpPool {
-    function initialize(uint256 id_, address base_, address quote_, address collateral_, address engine_, address perp_)
-        external;
+    struct Position {
+        address owner;
+        address collateralToken;
+        // margin, in `quote`-denominated value, fixed at open (normalized via a MatchingEngine
+        // price lookup at open time if collateralToken != quote)
+        uint256 margin;
+        uint256 entryPrice;
+        uint32 leverage;
+        bool isLong;
+    }
 
-    function placeShort(address owner, uint256 price, uint256 amount, bool autoUpdate) external returns (uint256 id);
+    function initialize(
+        uint256 id_,
+        address base_,
+        address quote_,
+        address matchingEngine_,
+        address perpEngine_,
+        address[] calldata collateralTokens_,
+        uint32 maxLeverage_,
+        uint32 maxUtilizationBps_,
+        uint256 minSpotLiquidity_
+    ) external;
 
-    function placeLong(address owner, uint256 price, uint256 amount, bool autoUpdate) external returns (uint256 id);
+    function openPosition(bool isLong, address collateralToken, uint256 collateralAmount, uint32 leverage, address trader)
+        external
+        returns (uint256 positionId);
 
-    function openPosition(bool isLong, uint256 price, uint256 amount, address owner) external returns (uint256 id);
+    function closePosition(uint256 positionId, address trader) external returns (int256 pnl, uint256 payout);
 
-    function closePosition(bool isLong, uint256 positionId, address owner) external returns (uint256 remaining);
+    function liquidate(uint256 positionId) external returns (uint256 feeFund, uint256 poolFund);
 
-    function liquidate(bool isLong, uint32 positionId) external returns (address owner);
+    function getPosition(uint256 positionId) external view returns (Position memory);
+
+    function isAcceptedCollateral(address token) external view returns (bool);
+
+    function reserveOf(address token) external view returns (uint256);
 }

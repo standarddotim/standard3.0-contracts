@@ -3,129 +3,144 @@
 pragma solidity ^0.8.24;
 
 import {IPerpPool} from "../interfaces/IPerpPool.sol";
-import {Initializable} from "../../security/Initializable.sol";
+import {FuturesPool} from "../libraries/FuturesPool.sol";
 import {TransferHelper} from "../libraries/TransferHelper.sol";
+import {Initializable} from "../../security/Initializable.sol";
 
-interface IWETHMinimal {
-    function WETH() external view returns (address);
+interface IMatchingEnginePrice {
+    function mktPrice(address base, address quote) external view returns (uint256);
+    function getPair(address base, address quote) external view returns (address book);
+}
 
-    function transfer(address to, uint256 value) external returns (bool);
+interface IOrderbookPool {
+    function getPool() external view returns (address);
+}
 
-    function withdraw(uint256) external;
+interface IERC20Minimal {
+    function balanceOf(address account) external view returns (uint256);
 }
 
 contract PerpPool is IPerpPool, Initializable {
-    // Pool Struct
-    struct Pool {
+    struct Market {
         uint256 id;
         address base;
         address quote;
-        address collateral;
-        address engine;
-        address perp;
+        address matchingEngine;
+        address perpEngine;
     }
 
-    Pool private pool;
+    Market public market;
 
-    uint256 collateralOne;
+    uint32 public maxLeverage;
+    uint32 public maxUtilizationBps;
+    uint256 public minSpotLiquidity;
 
-    error InvalidDecimals(uint8 base, uint8 quote);
-    error InvalidAccess(address sender, address allowed);
+    mapping(address => bool) public isAcceptedCollateral;
+    mapping(address => uint256) public reserveOf;
+
+    mapping(uint256 => Position) internal positions;
+    uint256 public positionCount;
+
+    uint256 public longOpenInterest;
+    uint256 public shortOpenInterest;
+
+    event PositionOpened(
+        uint256 indexed positionId, address indexed trader, bool isLong, uint256 entryPrice, uint256 margin, uint32 leverage
+    );
+    event PositionClosed(uint256 indexed positionId, address indexed trader, uint256 exitPrice, int256 pnl, uint256 payout);
+    event PositionLiquidated(uint256 indexed positionId, address indexed trader, uint256 markPrice, uint256 feeFund, uint256 poolFund);
+
+    error CollateralNotAccepted(address token);
+    error LeverageLimitExceeded(uint32 leverage, uint32 maxLeverage_);
+    error AmountIsZero();
     error PriceIsZero(uint256 price);
+    error InsufficientSpotLiquidity(uint256 have, uint256 required);
+    error OpenInterestCapExceeded(uint256 attempted, uint256 cap);
+    error InvalidAccess(address sender, address allowed);
+    error PositionNotFound(uint256 positionId);
+    error NotLiquidatable(uint256 positionId);
+    error InsufficientPoolReserve(uint256 requested, uint256 available);
+    error NotPositionOwner(address caller, address owner);
 
-    function initialize(uint256 id_, address base_, address quote_, address collateral_, address engine_, address perp_)
-        external
-        initializer
-    {
-        uint8 baseD = TransferHelper.decimals(base_);
-        uint8 quoteD = TransferHelper.decimals(quote_);
-        uint8 collD = TransferHelper.decimals(collateral_);
-        if (baseD > 18 || quoteD > 18) {
-            revert InvalidDecimals(baseD, quoteD);
-        }
-        collateralOne = 10 ** (collD);
-        pool = Pool(id_, base_, quote_, collateral_, engine_, perp_);
-    }
-
-    modifier onlyEngine() {
-        if (msg.sender != pool.engine) {
-            revert InvalidAccess(msg.sender, pool.engine);
+    modifier onlyPerpEngine() {
+        if (msg.sender != market.perpEngine) {
+            revert InvalidAccess(msg.sender, market.perpEngine);
         }
         _;
     }
 
-    function placeShort(address owner, uint256 price, uint256 amount, uint32 leverage, bool autoUpdate)
-        external
-        onlyEngine
-        returns (uint32 id)
-    {
-        revert("PerpPool: not yet implemented, see Task 2");
-    }
-
-    function placeLong(address owner, uint256 price, uint256 amount, uint32 leverage, bool autoUpdate)
-        external
-        onlyEngine
-        returns (uint32 id)
-    {
-        revert("PerpPool: not yet implemented, see Task 2");
-    }
-
-    function closePosition(bool isLong, uint256 positionId, address owner)
-        external
-        onlyEngine
-        returns (uint256 remaining)
-    {
-        revert("PerpPool: not yet implemented, see Task 2");
-    }
-
-    function liquidate(bool isLong, uint32 positionId) public onlyEngine returns (address owner) {
-        revert("PerpPool: not yet implemented, see Task 2");
-    }
-
-    function batchLiquidate(bool[] memory isLong, uint32[] memory positionId)
-        external
-        onlyEngine
-        returns (address owner)
-    {
-        for (uint256 i = 0; i < positionId.length; i++) {
-            liquidate(isLong[i], positionId[i]);
+    function initialize(
+        uint256 id_,
+        address base_,
+        address quote_,
+        address matchingEngine_,
+        address perpEngine_,
+        address[] calldata collateralTokens_,
+        uint32 maxLeverage_,
+        uint32 maxUtilizationBps_,
+        uint256 minSpotLiquidity_
+    ) external initializer {
+        market = Market(id_, base_, quote_, matchingEngine_, perpEngine_);
+        maxLeverage = maxLeverage_;
+        maxUtilizationBps = maxUtilizationBps_;
+        minSpotLiquidity = minSpotLiquidity_;
+        for (uint256 i = 0; i < collateralTokens_.length; i++) {
+            isAcceptedCollateral[collateralTokens_[i]] = true;
         }
     }
 
-    function _sendFunds(address token, address to, uint256 amount) internal returns (bool) {
-        address weth = IWETHMinimal(pool.engine).WETH();
-        if (token == weth) {
-            IWETHMinimal(weth).withdraw(amount);
-            return payable(to).send(amount);
-        } else {
-            TransferHelper.safeTransfer(token, to, amount);
-            return true;
-        }
+    function getPosition(uint256 positionId) external view returns (Position memory) {
+        return positions[positionId];
     }
 
-    function _absdiff(uint8 a, uint8 b) internal pure returns (uint8, bool) {
-        return (a > b ? a - b : b - a, a > b);
+    // --- interface-completeness stubs; real implementations land in Tasks 4-6 ---
+
+    function openPosition(bool isLong, address collateralToken, uint256 collateralAmount, uint32 leverage, address trader)
+        external
+        returns (uint256 positionId)
+    {
+        revert("PerpPool: not yet implemented, see Task 4");
     }
 
-    receive() external payable {
-        assert(msg.sender == IWETHMinimal(pool.engine).WETH());
+    function closePosition(uint256 positionId, address trader) external returns (int256 pnl, uint256 payout) {
+        revert("PerpPool: not yet implemented, see Task 5");
     }
 
-    function placeShort(address owner, uint256 price, uint256 amount, bool autoUpdate)
-        external
-        override
-        returns (uint256 id)
-    {}
+    function liquidate(uint256 positionId) external returns (uint256 feeFund, uint256 poolFund) {
+        revert("PerpPool: not yet implemented, see Task 6");
+    }
 
-    function placeLong(address owner, uint256 price, uint256 amount, bool autoUpdate)
-        external
-        override
-        returns (uint256 id)
-    {}
+    // --- internal helpers shared by Tasks 4-6 ---
 
-    function openPosition(bool isLong, uint256 price, uint256 amount, address owner)
-        external
-        override
-        returns (uint256 id)
-    {}
+    function _spotLiquidity() internal view returns (uint256) {
+        address orderbook = IMatchingEnginePrice(market.matchingEngine).getPair(market.base, market.quote);
+        if (orderbook == address(0)) return 0;
+        address swapPool = IOrderbookPool(orderbook).getPool();
+        if (swapPool == address(0)) return 0;
+        return IERC20Minimal(market.quote).balanceOf(swapPool);
+    }
+
+    function _toQuoteValue(address collateralToken, uint256 amount) internal view returns (uint256) {
+        if (collateralToken == market.quote) return amount;
+        uint256 price = IMatchingEnginePrice(market.matchingEngine).mktPrice(collateralToken, market.quote);
+        if (price == 0) revert PriceIsZero(price);
+        uint8 collateralDecimals = TransferHelper.decimals(collateralToken);
+        uint8 quoteDecimals = TransferHelper.decimals(market.quote);
+        uint256 raw = (amount * price) / 1e8;
+        if (collateralDecimals == quoteDecimals) return raw;
+        if (collateralDecimals > quoteDecimals) return raw / (10 ** (collateralDecimals - quoteDecimals));
+        return raw * (10 ** (quoteDecimals - collateralDecimals));
+    }
+
+    function _fromQuoteValue(address collateralToken, uint256 quoteAmount) internal view returns (uint256) {
+        if (collateralToken == market.quote) return quoteAmount;
+        uint256 price = IMatchingEnginePrice(market.matchingEngine).mktPrice(collateralToken, market.quote);
+        if (price == 0) revert PriceIsZero(price);
+        uint8 collateralDecimals = TransferHelper.decimals(collateralToken);
+        uint8 quoteDecimals = TransferHelper.decimals(market.quote);
+        uint256 raw = (quoteAmount * 1e8) / price;
+        if (collateralDecimals == quoteDecimals) return raw;
+        if (collateralDecimals > quoteDecimals) return raw * (10 ** (collateralDecimals - quoteDecimals));
+        return raw / (10 ** (quoteDecimals - collateralDecimals));
+    }
 }
