@@ -35,13 +35,49 @@ contract Pool is IPool, Initializable {
     struct SwapContext {
         address inputToken;
         address outputToken;
+        // Assembled positions in ascending (slippageLimit, positionId) order -- the
+        // paper's ascending-s-then-earliest-position discipline. Positions with equal
+        // slippageLimit form one "tier"; tiers are contiguous runs in these arrays.
         uint256[] positionIds;
         uint256[] contributions;
-        uint256 boundPrice;
-        uint256 lpAmount;
+        uint32[] slippages;
+        uint256 marketPrice; // TWAP reference this swap prices against
+        uint256 totalAvailable;
         uint256 recipientOutBefore;
         uint256 recipientInBefore;
-        uint32 lpOrderId;
+        // Pool's own input-token balance right after pulling amountIn and before any leg
+        // is placed. Settlement derives actual LP proceeds from the delta against this --
+        // never from a reconstruction at the bound price -- so better-priced third-party
+        // crossings are credited to positions instead of stranding in the pool.
+        uint256 poolInBefore;
+        // One LP leg per tier: tier t spans positions [tierStart[t], tierStart[t+1]),
+        // is offered at tierBounds[t] = TWAP * (1 +/- s_t), and totals tierAmounts[t].
+        uint256[] tierStart;
+        uint256[] tierBounds;
+        uint256[] tierAmounts;
+        uint32[] tierOrderIds;
+    }
+
+    // Bundles _assembleInRangePositions' scratch buffers into one memory value for the
+    // same stack-depth reason as SwapContext above.
+    struct AssemblyBuf {
+        uint256[] idsBuf;
+        uint256[] contribBuf;
+        uint32[] slipBuf;
+        uint256[] ids;
+        bool[] used;
+        uint32 count;
+    }
+
+    // Bundles _settleTiers' locals into one memory value for the same stack-depth reason
+    // as SwapContext above.
+    struct TierSettle {
+        uint256[] matched;
+        uint256[] expected; // principal + fee rebate the tier would earn at its bound price
+        uint256[] principal; // bound-priced principal component of `expected`
+        uint256 totalMatched;
+        uint256 totalExpected;
+        uint256 actualProceeds;
     }
 
     modifier onlyPositionManager() {
@@ -81,6 +117,12 @@ contract Pool is IPool, Initializable {
         uint256 quoteAmount,
         address payer
     ) external onlyPositionManager returns (uint256 positionId) {
+        // A tolerance at or above 100% is meaningless economically and, worse, weaponizable:
+        // if such a position were ever the widest tier assembled, the sell-side bound
+        // TWAP * (DENOM - s) / DENOM would underflow and revert every base->quote swap in
+        // its range. The eventual liquidity-scaled cap (paper §3.4) will tighten this
+        // further; this guard only excludes the degenerate range.
+        if (slippageLimit >= DENOM) revert InvalidSlippageLimit(slippageLimit);
         if (baseAmount > 0) {
             TransferHelper.safeTransferFrom(base, payer, address(this), baseAmount);
         }
@@ -193,107 +235,143 @@ contract Pool is IPool, Initializable {
 
         TransferHelper.safeTransferFrom(ctx.inputToken, msg.sender, address(this), amountIn);
 
-        (ctx.positionIds, ctx.contributions, ctx.boundPrice, ctx.lpAmount) = _prepareSwap(amountIn, quoteToBase);
+        _prepareSwap(ctx, quoteToBase);
 
-        // Approve MatchingEngine to pull both legs from this Pool's own balance.
+        // Approve MatchingEngine to pull every leg from this Pool's own balance.
         TransferHelper.safeApprove(ctx.inputToken, engine, amountIn);
-        TransferHelper.safeApprove(ctx.outputToken, engine, ctx.lpAmount); // outputToken == the LP-supplied side
+        TransferHelper.safeApprove(ctx.outputToken, engine, ctx.totalAvailable); // outputToken == the LP-supplied side
 
         // design.md §4.6: recipient's own balances are the only reliable signal for what the
         // swapper leg actually filled. Pool never owns that order (recipient does, so the
         // exchange's own settlement pays them directly) and cannot inspect or cancel it
         // afterward (Orderbook.cancelOrder is owner-gated -- confirmed, see §4.6). Snapshot
-        // before either leg is placed; recipient's balance is untouched by the LP leg (that
-        // leg's proceeds always go to Pool, never to recipient), so this is uncontaminated.
+        // before any leg is placed; recipient's balance is untouched by the LP legs (their
+        // proceeds always go to Pool, never to recipient), so this is uncontaminated.
         ctx.recipientOutBefore = IERC20(ctx.outputToken).balanceOf(recipient);
         ctx.recipientInBefore = IERC20(ctx.inputToken).balanceOf(recipient);
+        // Snapshot for settlement's balance-delta proceeds measurement -- must be taken
+        // before the LP legs go in, because a leg can cross pre-existing opposite orders
+        // at placement time and be paid immediately.
+        ctx.poolInBefore = IERC20(ctx.inputToken).balanceOf(address(this));
 
-        // LP leg first, as a maker order, so it is resting when the swapper's leg is placed
-        // and has the opportunity to actually cross against it (design doc §4.1, resolved
-        // ordering documented at the top of this plan's File Structure section). Pool owns
-        // this order (recipient = address(this)), so it can reliably self-cancel it below.
-        ctx.lpOrderId = _placeLpLeg(quoteToBase, ctx.boundPrice, ctx.lpAmount);
+        // LP legs first, one maker order per tolerance tier at that tier's own bound
+        // price, so they are resting when the swapper's leg is placed and can actually
+        // cross against it (design doc §4.1). Tightest tier = best price for the swapper,
+        // so price priority in the matching engine fills tighter tiers first -- the
+        // cross-tier half of the paper's ascending-s discipline is enforced by the book
+        // itself. Pool owns these orders (recipient = address(this)), so it can reliably
+        // self-cancel them below.
+        _placeTierLegs(ctx, quoteToBase);
 
-        // Swapper leg second -- this is what actually crosses against the LP leg's resting
-        // order (and/or other pre-existing book liquidity). recipient = recipient, never
-        // Pool (design.md §4.6): the exchange pays matched proceeds and any unmatched refund
-        // directly to recipient, which is exactly the balance snapshotted above and read
-        // again below. isMaker = restLeftoverOnFinalHop, unchanged from the original design
-        // (design doc §4.4): true rests any unfilled remainder as recipient's own order on
-        // the final hop of a multi-hop route; false (the default) lets
-        // MatchingEngine._detMake refund any remainder straight to recipient.
-        _placeSwapperLeg(quoteToBase, ctx.boundPrice, amountIn, restLeftoverOnFinalHop, recipient);
+        // Swapper leg second -- this is what actually crosses against the LP legs' resting
+        // orders (and/or other pre-existing book liquidity). Its limit price is the WIDEST
+        // assembled tier's bound: that is the worst price any pool position has agreed to,
+        // and the swapper walks the tiers best-first up to it (the paper's tiered-book
+        // execution model, §4.2). recipient = recipient, never Pool (design.md §4.6): the
+        // exchange pays matched proceeds and any unmatched refund directly to recipient,
+        // which is exactly the balance snapshotted above and read again below.
+        // isMaker = restLeftoverOnFinalHop, unchanged from the original design (design doc
+        // §4.4): true rests any unfilled remainder as recipient's own order on the final
+        // hop of a multi-hop route; false (the default) lets MatchingEngine._detMake
+        // refund any remainder straight to recipient.
+        _placeSwapperLeg(
+            quoteToBase, ctx.tierBounds[ctx.tierBounds.length - 1], amountIn, restLeftoverOnFinalHop, recipient
+        );
 
         amountOut = IERC20(ctx.outputToken).balanceOf(recipient) - ctx.recipientOutBefore;
         leftoverIn = IERC20(ctx.inputToken).balanceOf(recipient) - ctx.recipientInBefore;
 
-        // Self-cancel any unmatched remainder of the LP leg -- guarantees Pool never leaves
-        // a persistent resting order (design doc §3.1/§4.1). cancelOrder's return value is
-        // exactly how much of lpAmount did NOT match. This is legal (unlike the swapper leg
-        // above) because Pool owns this order. isBid is the LOGICAL OPPOSITE of the swap's
-        // own trade direction: the LP leg is always placed on the opposite side of the book
-        // from the swapper (quoteToBase=true -> LP leg is a limitSell/ask -> isBid=false to
-        // cancel it; quoteToBase=false -> LP leg is a limitBuy/bid -> isBid=true).
-        _settleLpLeg(ctx.lpOrderId, ctx.lpAmount, quoteToBase, ctx.boundPrice, ctx.positionIds, ctx.contributions);
+        // Self-cancel any unmatched remainder of every LP leg -- guarantees Pool never
+        // leaves a persistent resting order (design doc §3.1/§4.1) -- then credit each
+        // contributing position at its own tier's terms from the pool's measured proceeds.
+        _settleTiers(ctx, quoteToBase, amountIn);
 
         emit Swap(recipient, quoteToBase, amountIn, amountOut, leftoverIn);
     }
 
-    // Split out from `swap` for the same stack-depth reason as `_placeLpLeg`/`_settleLpLeg`
-    // below -- no logic change from the inline version this replaces. MEV fix (docs/swap/
-    // design.md §4.5): boundPrice must be derived from a time-weighted average, not the
-    // instantaneous last-matched price -- lmp() can be moved by a single trade in the same
-    // block/transaction sequence a swap lands in, and bounding this trade's price *relative
-    // to* lmp() doesn't protect against that, since the reference point itself is what's
-    // manipulated. Reverts (InsufficientHistory) if this pool's pair was listed less than
-    // TWAP_WINDOW seconds ago -- a deliberate fail-safe, not a bug.
-    function _prepareSwap(uint256 amountIn, bool quoteToBase)
-        internal
-        view
-        returns (uint256[] memory positionIds, uint256[] memory contributions, uint256 boundPrice, uint256 lpAmount)
-    {
-        (uint256 marketPrice,) = IOrderbook(orderbook).twap(TWAP_WINDOW);
+    // Split out from `swap` for the same stack-depth reason as `_placeTierLegs`/
+    // `_settleTiers` below. MEV fix (docs/swap/design.md §4.5): every tier bound is derived
+    // from a time-weighted average, not the instantaneous last-matched price -- lmp() can be
+    // moved by a single trade in the same block/transaction sequence a swap lands in, and
+    // bounding this trade's price *relative to* lmp() doesn't protect against that, since
+    // the reference point itself is what's manipulated. Reverts (InsufficientHistory) if
+    // this pool's pair was listed less than TWAP_WINDOW seconds ago -- a deliberate
+    // fail-safe, not a bug.
+    function _prepareSwap(SwapContext memory ctx, bool quoteToBase) internal view {
+        (ctx.marketPrice,) = IOrderbook(orderbook).twap(TWAP_WINDOW);
 
-        uint256 totalAvailable;
-        uint32 minSlippage;
-        (positionIds, contributions, totalAvailable, minSlippage) = _assembleInRangePositions(marketPrice, quoteToBase);
+        (ctx.positionIds, ctx.contributions, ctx.slippages, ctx.totalAvailable) =
+            _assembleInRangePositions(ctx.marketPrice, quoteToBase);
 
-        if (positionIds.length == 0) {
-            revert NoLiquidityInRange(marketPrice);
+        if (ctx.positionIds.length == 0) {
+            revert NoLiquidityInRange(ctx.marketPrice);
         }
 
-        boundPrice = quoteToBase
-            ? (marketPrice * (uint256(DENOM) + minSlippage)) / DENOM
-            : (marketPrice * (uint256(DENOM) - minSlippage)) / DENOM;
-
-        // Do not try to precisely cap the LP leg's size against a converted amountIn --
-        // ExchangeOrderbook._decreaseOrder auto-closes a maker order and hands the taker its
-        // ENTIRE remaining deposit whenever the post-match leftover would be <= that pair's
-        // own per-match dust threshold (dust = convert(price, 1, isBid), which varies with
-        // price/decimals -- there is no fixed rounding offset that stays clear of it in
-        // general). The LP leg is always self-cancelled within this same transaction
-        // regardless of its size (see _settleLpLeg below), and cancelOrder's return value --
-        // not this initial sizing -- is what actually determines matchedLpAmount either way.
-        // Offering the full assembled totalAvailable keeps the match comfortably clear of any
-        // dust boundary in the normal case.
-        lpAmount = totalAvailable;
+        _layoutTiers(ctx, quoteToBase);
     }
 
-    // Placing the LP leg is split out from `swap` purely to keep `swap`'s own stack depth
-    // within EVM limits (this file has no `viaIR` compilation available -- see
-    // foundry.toml). No logic change from the inline version: same branch, same arguments,
-    // same order relative to the swapper leg placed immediately after this returns in `swap`.
-    function _placeLpLeg(bool quoteToBase, uint256 boundPrice, uint256 lpAmount) internal returns (uint32 lpOrderId) {
-        if (quoteToBase) {
-            IMatchingEngine.OrderResult memory lpResult = IMatchingEngine(engine).limitSell(
-                base, quote, boundPrice, lpAmount, true, MAX_POSITIONS_PER_SWAP, address(this)
-            );
-            lpOrderId = lpResult.id;
-        } else {
-            IMatchingEngine.OrderResult memory lpResult = IMatchingEngine(engine).limitBuy(
-                base, quote, boundPrice, lpAmount, true, MAX_POSITIONS_PER_SWAP, address(this)
-            );
-            lpOrderId = lpResult.id;
+    // Groups the assembled positions -- already sorted ascending (slippageLimit, id) -- into
+    // contiguous equal-slippage tiers and computes each tier's own execution bound
+    // TWAP * (1 +/- s_tier). This is what makes a position's fill terms its OWN quoted
+    // tolerance (paper §3.4) rather than the pool-wide minimum: each tier becomes a separate
+    // maker order at its own price in _placeTierLegs.
+    //
+    // Tier sizing note (carried over from the single-leg version): do not try to precisely
+    // cap a leg's size against a converted amountIn -- ExchangeOrderbook._decreaseOrder
+    // auto-closes a maker order and hands the taker its ENTIRE remaining deposit whenever
+    // the post-match leftover would be <= that pair's own per-match dust threshold. Every
+    // leg is self-cancelled within this same transaction regardless of its size (see
+    // _settleTiers below), and cancelOrder's return value -- not this initial sizing -- is
+    // what actually determines each tier's matched amount either way.
+    function _layoutTiers(SwapContext memory ctx, bool quoteToBase) internal pure {
+        uint256 n = ctx.positionIds.length;
+        uint256 nTiers = 1;
+        for (uint256 i = 1; i < n; i++) {
+            if (ctx.slippages[i] != ctx.slippages[i - 1]) nTiers++;
+        }
+
+        ctx.tierStart = new uint256[](nTiers + 1);
+        ctx.tierBounds = new uint256[](nTiers);
+        ctx.tierAmounts = new uint256[](nTiers);
+        ctx.tierOrderIds = new uint32[](nTiers);
+
+        uint256 t = 0;
+        for (uint256 i = 0; i < n; i++) {
+            if (i > 0 && ctx.slippages[i] != ctx.slippages[i - 1]) {
+                t++;
+                ctx.tierStart[t] = i;
+            }
+            ctx.tierAmounts[t] += ctx.contributions[i];
+        }
+        ctx.tierStart[nTiers] = n;
+
+        for (t = 0; t < nTiers; t++) {
+            uint32 s = ctx.slippages[ctx.tierStart[t]];
+            ctx.tierBounds[t] = quoteToBase
+                ? (ctx.marketPrice * (uint256(DENOM) + s)) / DENOM
+                : (ctx.marketPrice * (uint256(DENOM) - s)) / DENOM;
+        }
+    }
+
+    // Places one maker order per tier at that tier's own bound, tightest tier first. The
+    // legs are all on the same side of the book, so they can never cross each other; a leg
+    // CAN cross unrelated pre-existing opposite orders at placement -- a deliberate
+    // composability property, and the reason settlement measures proceeds by balance delta.
+    // Split out from `swap` purely to keep `swap`'s own stack depth within EVM limits
+    // (this file has no `viaIR` compilation available -- see foundry.toml).
+    function _placeTierLegs(SwapContext memory ctx, bool quoteToBase) internal {
+        for (uint256 t = 0; t < ctx.tierBounds.length; t++) {
+            if (quoteToBase) {
+                IMatchingEngine.OrderResult memory lpResult = IMatchingEngine(engine).limitSell(
+                    base, quote, ctx.tierBounds[t], ctx.tierAmounts[t], true, MAX_POSITIONS_PER_SWAP, address(this)
+                );
+                ctx.tierOrderIds[t] = lpResult.id;
+            } else {
+                IMatchingEngine.OrderResult memory lpResult = IMatchingEngine(engine).limitBuy(
+                    base, quote, ctx.tierBounds[t], ctx.tierAmounts[t], true, MAX_POSITIONS_PER_SWAP, address(this)
+                );
+                ctx.tierOrderIds[t] = lpResult.id;
+            }
         }
     }
 
@@ -325,91 +403,180 @@ contract Pool is IPool, Initializable {
         }
     }
 
-    // Split out from `swap` for the same stack-depth reason as `_placeLpLeg` above -- no
-    // logic change from the inline version this replaces.
-    function _settleLpLeg(
-        uint32 lpOrderId,
-        uint256 lpAmount,
-        bool quoteToBase,
-        uint256 boundPrice,
-        uint256[] memory positionIds,
-        uint256[] memory contributions
-    ) internal {
-        // Self-cancel any unmatched remainder of the LP leg -- guarantees Pool never leaves
-        // a persistent resting order (design doc §3.1/§4.1). cancelOrder's return value is
-        // exactly how much of lpAmount did NOT match. This is legal (unlike the swapper leg
-        // above) because Pool owns this order. isBid is the LOGICAL OPPOSITE of the swap's
-        // own trade direction: the LP leg is always placed on the opposite side of the book
-        // from the swapper (quoteToBase=true -> LP leg is a limitSell/ask -> isBid=false to
-        // cancel it; quoteToBase=false -> LP leg is a limitBuy/bid -> isBid=true).
-        uint256 lpUnmatched = 0;
-        if (lpOrderId > 0) {
-            lpUnmatched = IMatchingEngine(engine).cancelOrder(base, quote, !quoteToBase, lpOrderId);
+    // Cancels every tier leg, measures the pool's ACTUAL proceeds by balance delta, and
+    // credits each contributing position at its own tier's terms. Split out from `swap`
+    // for the same stack-depth reason as `_placeTierLegs` above.
+    //
+    // Self-cancelling each leg guarantees Pool never leaves a persistent resting order
+    // (design doc §3.1/§4.1). cancelOrder's return value is exactly how much of that
+    // tier's amount did NOT match. This is legal (unlike the swapper leg) because Pool
+    // owns these orders. isBid is the LOGICAL OPPOSITE of the swap's own trade direction:
+    // the LP legs are always on the opposite side of the book from the swapper
+    // (quoteToBase=true -> asks -> isBid=false to cancel; quoteToBase=false -> bids ->
+    // isBid=true).
+    //
+    // Proceeds accounting: the engine pays the pool in-band as fills happen (principal net
+    // of maker fee, plus the poolFeeShare rebate -- see Orderbook._sendFunds), and a leg
+    // that crossed a better-priced third-party order is paid at THAT price, above its tier
+    // bound. Reconstructing proceeds from the bound price would strand exactly that
+    // surplus in the pool (the old single-leg version's bug); instead the total is
+    // measured as an input-token balance delta and split across tiers in proportion to
+    // each tier's bound-priced entitlement, so surplus (or a taker-fee shortfall, if a leg
+    // took liquidity at placement) is distributed proportionally and nothing is stranded
+    // beyond integer dust.
+    function _settleTiers(SwapContext memory ctx, bool quoteToBase, uint256 amountIn) internal {
+        TierSettle memory ts;
+        uint256 nTiers = ctx.tierOrderIds.length;
+        ts.matched = new uint256[](nTiers);
+        ts.expected = new uint256[](nTiers);
+        ts.principal = new uint256[](nTiers);
+
+        for (uint256 t = 0; t < nTiers; t++) {
+            uint256 unmatched = 0;
+            if (ctx.tierOrderIds[t] > 0) {
+                unmatched = IMatchingEngine(engine).cancelOrder(base, quote, !quoteToBase, ctx.tierOrderIds[t]);
+            }
+            ts.matched[t] = ctx.tierAmounts[t] - unmatched;
+            ts.totalMatched += ts.matched[t];
         }
-        uint256 matchedLpAmount = lpAmount - lpUnmatched;
+        if (ts.totalMatched == 0) return;
 
-        if (matchedLpAmount > 0) {
-            uint32 makerFeeRate = IMatchingEngine(engine).feeOf(base, quote, address(this), true);
-            uint256 grossLpProceeds = IOrderbook(orderbook).convert(boundPrice, matchedLpAmount, quoteToBase);
-            uint256 lpFee = (grossLpProceeds * makerFeeRate) / DENOM;
-            uint256 poolShareOfFee = (lpFee * IMatchingEngine(engine).poolFeeShare()) / DENOM;
-            // Principal leg only -- poolShareOfFee is routed separately via creditFee below,
-            // so folding it in here as well would double-credit it (once into principal,
-            // once into feeOwedQuote/feeOwedBase).
-            uint256 lpPrincipalReceived = grossLpProceeds - lpFee;
+        uint32 makerFeeRate = IMatchingEngine(engine).feeOf(base, quote, address(this), true);
+        uint256 rebateShare = IMatchingEngine(engine).poolFeeShare();
+        for (uint256 t = 0; t < nTiers; t++) {
+            if (ts.matched[t] == 0) continue;
+            uint256 gross = IOrderbook(orderbook).convert(ctx.tierBounds[t], ts.matched[t], quoteToBase);
+            uint256 fee = (gross * makerFeeRate) / DENOM;
+            ts.principal[t] = gross - fee;
+            ts.expected[t] = ts.principal[t] + (fee * rebateShare) / DENOM;
+            ts.totalExpected += ts.expected[t];
+        }
 
-            _settlePositionContributions(positionIds, contributions, quoteToBase, matchedLpAmount, lpPrincipalReceived);
+        // amountIn is added back because the swapper leg's placement pulled exactly
+        // amountIn of the input token out of the pool after poolInBefore was snapshotted
+        // (any unfilled remainder is refunded or rested to RECIPIENT by the engine, never
+        // to the pool).
+        // Add amountIn BEFORE subtracting the snapshot: the snapshot includes amountIn
+        // (taken after pulling it) while the current balance no longer does, so the
+        // subtraction-first order underflows whenever proceeds < amountIn.
+        ts.actualProceeds = IERC20(ctx.inputToken).balanceOf(address(this)) + amountIn - ctx.poolInBefore;
 
-            if (poolShareOfFee > 0) {
-                this.creditFee(positionIds, contributions, !quoteToBase, poolShareOfFee);
+        for (uint256 t = 0; t < nTiers; t++) {
+            if (ts.matched[t] == 0 || ts.expected[t] == 0) continue;
+            uint256 actualTier =
+                ts.totalExpected == 0 ? 0 : (ts.actualProceeds * ts.expected[t]) / ts.totalExpected;
+            // Scale the rebate component and give principal the remainder -- when actual
+            // == expected (the common exact-fill case) this reproduces the bound-priced
+            // split to the wei, and any better-price surplus lands on the principal side,
+            // which is where a better fill price economically belongs.
+            uint256 rebateActual = (actualTier * (ts.expected[t] - ts.principal[t])) / ts.expected[t];
+            _settleTierPositions(ctx, t, ts.matched[t], actualTier - rebateActual, rebateActual, quoteToBase);
+        }
+
+        // I2: retire any contributing position this settlement fully drained (zero
+        // principal both sides, zero fees owed -- e.g. a dust position whose
+        // proportional received-credit floor-divides to 0). MUST run after the fee
+        // crediting inside _settleTierPositions: crediting fees to an already-retired
+        // position would strand them behind collect's PositionDoesNotExist gate. Mutating
+        // activeIds here is safe: _assembleInRangePositions already ran and its results
+        // are held in memory.
+        for (uint256 i = 0; i < ctx.positionIds.length; i++) {
+            _deactivateIfDead(ctx.positionIds[i]);
+        }
+    }
+
+    // Allocates one tier's matched amount across its positions as a WATERFALL in position
+    // order -- and tier order is ascending id, i.e. age -- so the earliest position at a
+    // tolerance is drained fully before a younger one supplies anything. This is the
+    // paper's JIT defense (§4.6) made literal: a same-block position minted at the same
+    // tolerance as an incumbent takes zero flow (volume or fees) until every older
+    // same-tolerance position is exhausted; to take flow it must quote strictly tighter,
+    // which hands the swapper a better price instead of siphoning a passive LP's income.
+    // Principal is credited pro-rata to the amount each position actually supplied; the
+    // tier's fee rebate is credited through creditFee with the same supplied amounts as
+    // shares.
+    function _settleTierPositions(
+        SwapContext memory ctx,
+        uint256 t,
+        uint256 matched,
+        uint256 principalActual,
+        uint256 rebateActual,
+        bool quoteToBase
+    ) internal {
+        uint256 startI = ctx.tierStart[t];
+        uint256 len = ctx.tierStart[t + 1] - startI;
+        uint256[] memory tierIds = new uint256[](len);
+        uint256[] memory used = new uint256[](len);
+
+        uint256 remaining = matched;
+        for (uint256 j = 0; j < len; j++) {
+            uint256 contribution = ctx.contributions[startI + j];
+            uint256 u = contribution < remaining ? contribution : remaining;
+            remaining -= u;
+            tierIds[j] = ctx.positionIds[startI + j];
+            used[j] = u;
+            if (u > 0) {
+                uint256 credit = (principalActual * u) / matched;
+                Position storage p = positions[tierIds[j]];
+                if (quoteToBase) {
+                    p.baseAmount -= u;
+                    p.quoteAmount += credit;
+                } else {
+                    p.quoteAmount -= u;
+                    p.baseAmount += credit;
+                }
             }
+        }
 
-            // I2: retire any contributing position this settlement fully drained (zero
-            // principal both sides, zero fees owed -- e.g. a dust position whose
-            // proportional received-credit floor-divides to 0). MUST run after creditFee
-            // above: crediting fees to an already-retired position would strand them
-            // behind collect's PositionDoesNotExist gate. Mutating activeIds here is safe:
-            // _assembleInRangePositions already ran and its results are held in memory.
-            for (uint256 i = 0; i < positionIds.length; i++) {
-                _deactivateIfDead(positionIds[i]);
-            }
+        if (rebateActual > 0) {
+            this.creditFee(tierIds, used, !quoteToBase, rebateActual);
         }
     }
 
     function _assembleInRangePositions(uint256 marketPrice, bool quoteToBase)
         internal
         view
-        returns (uint256[] memory positionIds, uint256[] memory contributions, uint256 totalAvailable, uint32 minSlippage)
+        returns (
+            uint256[] memory positionIds,
+            uint256[] memory contributions,
+            uint32[] memory slippages,
+            uint256 totalAvailable
+        )
     {
-        uint256[] memory idsBuf = new uint256[](MAX_POSITIONS_PER_SWAP);
-        uint256[] memory contribBuf = new uint256[](MAX_POSITIONS_PER_SWAP);
-        uint32 count = 0;
-        minSlippage = type(uint32).max;
+        AssemblyBuf memory buf;
+        buf.idsBuf = new uint256[](MAX_POSITIONS_PER_SWAP);
+        buf.contribBuf = new uint256[](MAX_POSITIONS_PER_SWAP);
+        buf.slipBuf = new uint32[](MAX_POSITIONS_PER_SWAP);
 
         // I2 fix: iterate only live positions -- one up-front storage copy of the id
-        // list (one SLOAD per element), then 20 selection passes over memory. Both the scan and the scratch
-        // buffer are sized by the LIVE count; the old `1..nextPositionId` loop and its
-        // `new bool[](nextPositionId + 1)` buffer each grew forever with dead history.
-        // Tie-break nuance vs the old code: positions are visited in activeIds order
-        // (permuted by swap-and-pop), not ascending id order, so among >20 in-range
-        // positions with IDENTICAL slippageLimit the selected subset can differ from the
-        // old code's. Selection is still tightest-slippage-first; contribution math is
-        // order-independent.
-        uint256[] memory ids = activeIds;
-        bool[] memory used = new bool[](ids.length);
+        // list (one SLOAD per element), then 20 selection passes over memory. Both the
+        // scan and the scratch buffer are sized by the LIVE count; the old
+        // `1..nextPositionId` loop and its `new bool[](nextPositionId + 1)` buffer each
+        // grew forever with dead history.
+        //
+        // Selection is ascending (slippageLimit, positionId): tightest tolerance first,
+        // ties broken by position AGE (lower id = older), regardless of the activeIds
+        // permutation swap-and-pop leaves behind. The age tie-break is load-bearing for
+        // the within-tier waterfall in _settleTierPositions -- it is what makes "a
+        // same-tolerance JIT position takes nothing until every older position is
+        // exhausted" true even among >MAX_POSITIONS_PER_SWAP in-range candidates.
+        buf.ids = activeIds;
+        buf.used = new bool[](buf.ids.length);
 
         for (uint32 pass = 0; pass < MAX_POSITIONS_PER_SWAP; pass++) {
             uint256 bestK = type(uint256).max;
             uint32 bestSlippage = type(uint32).max;
 
-            for (uint256 k = 0; k < ids.length; k++) {
-                if (used[k]) continue;
-                Position storage p = positions[ids[k]];
+            for (uint256 k = 0; k < buf.ids.length; k++) {
+                if (buf.used[k]) continue;
+                Position storage p = positions[buf.ids[k]];
                 if (!p.active) continue; // belt-and-braces; the activeIds invariant makes this redundant
                 if (p.minPrice > marketPrice || p.maxPrice < marketPrice) continue;
-                uint256 available = quoteToBase ? p.baseAmount : p.quoteAmount;
-                if (available == 0) continue;
-                if (p.slippageLimit < bestSlippage) {
+                if ((quoteToBase ? p.baseAmount : p.quoteAmount) == 0) continue;
+                if (
+                    bestK == type(uint256).max || p.slippageLimit < bestSlippage
+                        || (p.slippageLimit == bestSlippage && buf.ids[k] < buf.ids[bestK])
+                ) {
                     bestSlippage = p.slippageLimit;
                     bestK = k;
                 }
@@ -417,57 +584,23 @@ contract Pool is IPool, Initializable {
 
             if (bestK == type(uint256).max) break;
 
-            used[bestK] = true;
-            uint256 bestId = ids[bestK];
+            buf.used[bestK] = true;
+            uint256 bestId = buf.ids[bestK];
             uint256 contribution = quoteToBase ? positions[bestId].baseAmount : positions[bestId].quoteAmount;
-            idsBuf[count] = bestId;
-            contribBuf[count] = contribution;
+            buf.idsBuf[buf.count] = bestId;
+            buf.contribBuf[buf.count] = contribution;
+            buf.slipBuf[buf.count] = bestSlippage;
             totalAvailable += contribution;
-            if (bestSlippage < minSlippage) minSlippage = bestSlippage;
-            count++;
+            buf.count++;
         }
 
-        if (count == 0) {
-            minSlippage = 0;
-        }
-
-        positionIds = new uint256[](count);
-        contributions = new uint256[](count);
-        for (uint32 i = 0; i < count; i++) {
-            positionIds[i] = idsBuf[i];
-            contributions[i] = contribBuf[i];
-        }
-    }
-
-    function _settlePositionContributions(
-        uint256[] memory positionIds,
-        uint256[] memory contributions,
-        bool quoteToBase,
-        uint256 matchedLpAmount,
-        uint256 lpPrincipalReceived
-    ) internal {
-        // Reduce each contributing position's supplied-side balance proportionally to how
-        // much of the total assembled amount actually matched, and credit back the other
-        // side with its proportional share of what the LP leg received in return -- this is
-        // the "position holdings shift composition as price moves through range" behavior
-        // from design doc §4.3. An earlier draft of this function only did the decrement
-        // half and never credited back the received side; fixed here.
-        uint256 totalContributed;
-        for (uint256 i = 0; i < contributions.length; i++) {
-            totalContributed += contributions[i];
-        }
-        if (totalContributed == 0) return;
-
-        for (uint256 i = 0; i < positionIds.length; i++) {
-            uint256 suppliedUsed = (matchedLpAmount * contributions[i]) / totalContributed;
-            uint256 receivedCredit = (lpPrincipalReceived * contributions[i]) / totalContributed;
-            if (quoteToBase) {
-                positions[positionIds[i]].baseAmount -= suppliedUsed;
-                positions[positionIds[i]].quoteAmount += receivedCredit;
-            } else {
-                positions[positionIds[i]].quoteAmount -= suppliedUsed;
-                positions[positionIds[i]].baseAmount += receivedCredit;
-            }
+        positionIds = new uint256[](buf.count);
+        contributions = new uint256[](buf.count);
+        slippages = new uint32[](buf.count);
+        for (uint32 i = 0; i < buf.count; i++) {
+            positionIds[i] = buf.idsBuf[i];
+            contributions[i] = buf.contribBuf[i];
+            slippages[i] = buf.slipBuf[i];
         }
     }
 

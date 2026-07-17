@@ -107,29 +107,39 @@ contract SwapTest is PoolBaseSetup {
         uint256 expectedPoolShareOfFee = (lpFee * matchingEngine.poolFeeShare()) / matchingEngine.DENOM();
         uint256 expectedPrincipal = grossLpProceeds - lpFee;
 
+        // Settlement credits the pool's MEASURED proceeds (balance delta), not a
+        // bound-priced reconstruction -- the engine's per-fill floored fee math can pay a
+        // few wei more than the one-shot reconstruction above, and that surplus belongs to
+        // the position, not stranded in the pool. Measure what the pool actually keeps:
+        // across the whole swap() call its quote delta is exactly the LP leg's payout
+        // (the swapper's 100e18 passes through: pulled in, then pulled out by the engine).
+        uint256 poolQuoteBefore = token2.balanceOf(address(pool));
+
         vm.prank(trader1);
         token2.approve(address(pool), 100e18);
         vm.prank(trader1);
         pool.swap(100e18, true, trader1, false);
 
+        uint256 actualProceeds = token2.balanceOf(address(pool)) - poolQuoteBefore;
+
         IPool.Position memory afterSwap = pool.getPosition(positionId);
         // Position sold base (quoteToBase=true -> LP leg limitSell's base), so baseAmount
         // must have decreased and quoteAmount (principal received back) must have increased.
         assertLt(afterSwap.baseAmount, before.baseAmount);
-        assertEq(afterSwap.quoteAmount, before.quoteAmount + expectedPrincipal);
+        // The reconstruction brackets the credit tightly from below: the engine never pays
+        // less than the bound-priced amount, and per-fill rounding surplus stays small.
+        assertGe(afterSwap.quoteAmount, before.quoteAmount + expectedPrincipal);
+        assertApproxEqAbs(afterSwap.quoteAmount, before.quoteAmount + expectedPrincipal, 1000);
         // With poolFeeShare > 0 and this being the sole contributing position, it should
-        // have received exactly its computed share as a fee reward on the quote side (see
-        // swap()'s isBaseFee = !quoteToBase convention) -- an exact check, not nonzero-only.
-        assertEq(afterSwap.feeOwedQuote, expectedPoolShareOfFee);
-        // Conservation: what got credited to this position across both fields must equal
-        // exactly what Pool actually received from the match (Orderbook._sendFunds's
-        // withoutFee + poolShare, both sent to Pool as the LP leg's order owner when
-        // poolFeeShare > 0 -- Task 4). This is the check that directly catches the
-        // double-credit bug class, independent of the exact fee-split numbers above.
-        assertEq(
-            (afterSwap.quoteAmount - before.quoteAmount) + afterSwap.feeOwedQuote,
-            grossLpProceeds - lpFee + expectedPoolShareOfFee
-        );
+        // have received its computed share as a fee reward on the quote side (see swap()'s
+        // isBaseFee = !quoteToBase convention), up to the same per-fill rounding.
+        assertApproxEqAbs(afterSwap.feeOwedQuote, expectedPoolShareOfFee, 1000);
+        // Conservation, EXACT and against measured money: what got credited to this
+        // position across both fields must equal exactly what Pool actually received from
+        // the match (Orderbook._sendFunds's withoutFee + poolShare, both sent to Pool as
+        // the LP leg's order owner when poolFeeShare > 0). This is the check that directly
+        // catches both the double-credit bug class and the proceeds-stranding bug class.
+        assertEq((afterSwap.quoteAmount - before.quoteAmount) + afterSwap.feeOwedQuote, actualProceeds);
     }
 
     function testPartialFillRefundsLeftoverByDefault() public {

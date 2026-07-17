@@ -38,6 +38,7 @@ interface IPool {
     error NoLiquidityInRange(uint256 marketPrice);
     error TooManyPositionsInRange(uint32 cap);
     error InsufficientPositionBalance(uint256 positionId, uint256 requested, uint256 available);
+    error InvalidSlippageLimit(uint32 slippageLimit);
 
     function initialize(
         uint256 id_,
