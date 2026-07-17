@@ -21,7 +21,6 @@ contract PerpEngine is IPerpEngine, ReentrancyGuard, AccessControl {
     bool init;
 
     mapping(address => bool) public isStablecoin;
-    mapping(bytes32 => address) internal poolsByPair;
 
     event PoolAdded(address indexed pool, address indexed base, address indexed quote, uint32 maxLeverage);
     event StablecoinSet(address indexed token, bool accepted);
@@ -92,12 +91,28 @@ contract PerpEngine is IPerpEngine, ReentrancyGuard, AccessControl {
     // engine on their behalf -- the caller is the funder and must have approved the POOL
     // (not this engine) for `amount` beforehand, since PerpPool.seedReserve pulls funds via
     // safeTransferFrom(token, funder, pool, amount) with funder == msg.sender here.
+    //
+    // WARNING: seeded capital is NON-REDEEMABLE in Phase 1 -- no withdrawal path exists until
+    // LP share accounting lands. Do not seed funds you cannot lock indefinitely.
     function seedPool(address pool, address token, uint256 amount) external returns (bool) {
         if (!hasRole(MARKET_MAKER_ROLE, _msgSender())) {
             revert InvalidRole(MARKET_MAKER_ROLE, _msgSender());
         }
         IPerpPool(pool).seedReserve(token, amount, msg.sender);
         emit PoolSeeded(pool, token, msg.sender, amount);
+        return true;
+    }
+
+    // Production passthrough for PerpPool.setLiquidationFeeBps / setLiquidationFeeRecipient,
+    // which are onlyPerpEngine-gated so a market maker cannot configure a pool's liquidation
+    // fee split directly. Without this, liquidationFeeBps/liquidationFeeRecipient are
+    // permanently unset in production (final-branch review I4).
+    function setPoolLiquidationFee(address pool, uint32 feeBps, address recipient) external returns (bool) {
+        if (!hasRole(MARKET_MAKER_ROLE, _msgSender())) {
+            revert InvalidRole(MARKET_MAKER_ROLE, _msgSender());
+        }
+        IPerpPool(pool).setLiquidationFeeBps(feeBps);
+        IPerpPool(pool).setLiquidationFeeRecipient(recipient);
         return true;
     }
 

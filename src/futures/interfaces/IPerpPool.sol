@@ -36,6 +36,10 @@ interface IPerpPool {
 
     function liquidate(uint256 positionId) external returns (uint256 feeFund, uint256 poolFund);
 
+    function setLiquidationFeeBps(uint32 bps) external;
+
+    function setLiquidationFeeRecipient(address recipient) external;
+
     function getPosition(uint256 positionId) external view returns (Position memory);
 
     function isAcceptedCollateral(address token) external view returns (bool);

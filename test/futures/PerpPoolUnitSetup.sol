@@ -32,9 +32,12 @@ contract PerpPoolUnitSetup is Test {
         factory = new PerpPoolFactory();
         factory.initialize(matchingEngine, perpEngine);
 
-        address[] memory collaterals = new address[](2);
+        // Only quote collateral is enabled (final-branch review I1 -- non-quote collateral is
+        // gated off in PerpPool.initialize until Phase 2 designs the alt backing model).
+        // altCollateral is still deployed above for the dedicated
+        // testInitializeRevertsOnNonQuoteCollateral case in Init.t.sol.
+        address[] memory collaterals = new address[](1);
         collaterals[0] = address(quoteToken);
-        collaterals[1] = address(altCollateral);
 
         vm.prank(perpEngine);
         pool = factory.createPerpPool(

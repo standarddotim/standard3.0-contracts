@@ -55,6 +55,7 @@ contract PerpPool is IPerpPool, Initializable {
     event ReserveSeeded(address indexed token, address indexed funder, uint256 amount);
 
     error CollateralNotAccepted(address token);
+    error NonQuoteCollateralNotSupported(address token);
     error LeverageLimitExceeded(uint32 leverage, uint32 maxLeverage_);
     error AmountIsZero();
     error PriceIsZero(uint256 price);
@@ -88,7 +89,17 @@ contract PerpPool is IPerpPool, Initializable {
         maxLeverage = maxLeverage_;
         maxUtilizationBps = maxUtilizationBps_;
         minSpotLiquidity = minSpotLiquidity_;
+        // The multi-collateral storage/normalization architecture (isAcceptedCollateral,
+        // reserveOf per token, _toQuoteValue/_fromQuoteValue) is retained for Phase 2, but
+        // enabling non-quote collateral is deferred: reserveOf[alt] only ever holds that
+        // position's own deposit, so a winning alt-collateral close can demand more than the
+        // pool holds in that token and revert InsufficientPoolReserve, stranding the trader's
+        // funds (see final-branch review I1). Until Phase 2 designs alt backing/drift handling,
+        // only quote collateral may be configured.
         for (uint256 i = 0; i < collateralTokens_.length; i++) {
+            if (collateralTokens_[i] != quote_) {
+                revert NonQuoteCollateralNotSupported(collateralTokens_[i]);
+            }
             isAcceptedCollateral[collateralTokens_[i]] = true;
         }
     }
@@ -235,11 +246,11 @@ contract PerpPool is IPerpPool, Initializable {
         return (pnl, payoutInCollateral);
     }
 
-    function setLiquidationFeeBps(uint32 bps) external onlyPerpEngine {
+    function setLiquidationFeeBps(uint32 bps) external override onlyPerpEngine {
         liquidationFeeBps = bps;
     }
 
-    function setLiquidationFeeRecipient(address recipient) external onlyPerpEngine {
+    function setLiquidationFeeRecipient(address recipient) external override onlyPerpEngine {
         liquidationFeeRecipient = recipient;
     }
 

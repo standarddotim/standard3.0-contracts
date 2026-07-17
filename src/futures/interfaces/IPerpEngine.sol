@@ -19,7 +19,15 @@ interface IPerpEngine {
     // Passthrough for PerpPool.seedReserve, which is onlyPerpEngine-gated so production
     // seeding must route through here. Gated by MARKET_MAKER_ROLE; the caller (market maker)
     // is the funder and must have approved the POOL (not this engine) beforehand.
+    //
+    // WARNING: seeded capital is NON-REDEEMABLE in Phase 1 -- no withdrawal path exists until
+    // LP share accounting lands. Do not seed funds you cannot lock indefinitely.
     function seedPool(address pool, address token, uint256 amount) external returns (bool);
+
+    // Passthrough for PerpPool.setLiquidationFeeBps / setLiquidationFeeRecipient, which are
+    // onlyPerpEngine-gated so production configuration must route through here. Gated by
+    // MARKET_MAKER_ROLE.
+    function setPoolLiquidationFee(address pool, uint32 feeBps, address recipient) external returns (bool);
 
     function long(address pool, address collateralToken, uint256 collateralAmount, uint32 leverage)
         external

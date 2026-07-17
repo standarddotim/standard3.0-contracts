@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {PerpEngineBaseSetup} from "../PerpEngineBaseSetup.sol";
 import {PerpPool} from "../../../src/futures/pools/PerpPool.sol";
+import {PerpEngine} from "../../../src/futures/PerpEngine.sol";
 
 contract PerpEngineEndToEndTest is PerpEngineBaseSetup {
     function testAddPoolRevertsWhenQuoteIsNotAllowlistedStablecoin() public {
@@ -113,5 +114,33 @@ contract PerpEngineEndToEndTest is PerpEngineBaseSetup {
         assertEq(PerpPool(pool).reserveOf(address(stablecoin)), reserveBefore);
         assertEq(stablecoin.balanceOf(trader1), traderBalBefore);
         assertEq(PerpPool(pool).getPosition(positionId).owner, address(0));
+    }
+
+    // final-branch review I4: PerpPool.setLiquidationFeeBps/setLiquidationFeeRecipient are
+    // onlyPerpEngine-gated but had no passthrough on PerpEngine, so in production the fee split
+    // was permanently unreachable. This exercises the new setPoolLiquidationFee passthrough.
+    function testSetPoolLiquidationFeeThroughEngine() public {
+        perpEngineSetUp();
+        address[] memory collaterals = new address[](1);
+        collaterals[0] = address(stablecoin);
+        address pool = perpEngine.addPool(address(token1), address(stablecoin), collaterals, 10, 8000, 0);
+
+        // This test contract deployed PerpEngine, so it already holds MARKET_MAKER_ROLE.
+        bool ok = perpEngine.setPoolLiquidationFee(pool, 500, address(0xFEE));
+        assertTrue(ok);
+        assertEq(PerpPool(pool).liquidationFeeBps(), 500);
+        assertEq(PerpPool(pool).liquidationFeeRecipient(), address(0xFEE));
+    }
+
+    function testSetPoolLiquidationFeeRevertsForNonMarketMaker() public {
+        perpEngineSetUp();
+        address[] memory collaterals = new address[](1);
+        collaterals[0] = address(stablecoin);
+        address pool = perpEngine.addPool(address(token1), address(stablecoin), collaterals, 10, 8000, 0);
+
+        bytes32 marketMakerRole = keccak256("MARKET_MAKER_ROLE");
+        vm.prank(trader1);
+        vm.expectRevert(abi.encodeWithSelector(PerpEngine.InvalidRole.selector, marketMakerRole, trader1));
+        perpEngine.setPoolLiquidationFee(pool, 500, address(0xFEE));
     }
 }
