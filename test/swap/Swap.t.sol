@@ -224,4 +224,39 @@ contract SwapTest is PoolBaseSetup {
         IPool.Position memory p = pool.getPosition(secondId);
         assertLt(p.baseAmount, 500e18); // the survivor is the position that supplied the swap
     }
+
+    function testSwapRetiresFullyConsumedZeroCreditPosition() public {
+        matchingEngine.setPoolFeeShare(50000000); // 50% in DENOM=1e8 terms
+
+        // 1-wei quote-only dust position alongside setUp's 1000e18/1000e18 one. See the
+        // plan's Task 3 header for the arithmetic: in the base->quote direction a full
+        // match drains its 1 wei with zero received-credit and zero fee share, leaving it
+        // economically dead inside the swap itself -- the case the _settleLpLeg sweep
+        // (and nothing else) retires.
+        vm.prank(positionManager);
+        uint256 dustId = pool.addLiquidity(50e8, 150e8, 5000000, 0, 1, lp1);
+        assertEq(pool.activePositionsLength(), 2);
+
+        // Sell enough base to consume the ENTIRE assembled quote (1000e18 + 1 wei): at
+        // boundPrice = 95e8 that's ~10.53e18 base; 12e18 gives comfortable headroom, and
+        // the unmatched remainder refunds to trader1 (isMaker=false).
+        vm.prank(trader1);
+        token1.approve(address(pool), 12e18);
+        vm.prank(trader1);
+        pool.swap(12e18, false, trader1, false);
+
+        IPool.Position memory dust = pool.getPosition(dustId);
+        assertFalse(dust.active);
+        assertEq(dust.quoteAmount, 0);
+        assertEq(dust.baseAmount, 0);
+        assertEq(dust.feeOwedBase, 0);
+        assertEq(pool.activePositionsLength(), 1);
+
+        // Fee crediting must still land on the surviving contributor -- proves the sweep
+        // runs AFTER creditFee (sweep-before-credit would credit fees to a retired id,
+        // stranding them behind the PositionDoesNotExist gate).
+        IPool.Position memory big = pool.getPosition(positionId);
+        assertTrue(big.active);
+        assertGt(big.feeOwedBase, 0); // isBaseFee = !quoteToBase = true for this direction
+    }
 }

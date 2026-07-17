@@ -363,6 +363,16 @@ contract Pool is IPool, Initializable {
             if (poolShareOfFee > 0) {
                 this.creditFee(positionIds, contributions, !quoteToBase, poolShareOfFee);
             }
+
+            // I2: retire any contributing position this settlement fully drained (zero
+            // principal both sides, zero fees owed -- e.g. a dust position whose
+            // proportional received-credit floor-divides to 0). MUST run after creditFee
+            // above: crediting fees to an already-retired position would strand them
+            // behind collect's PositionDoesNotExist gate. Mutating activeIds here is safe:
+            // _assembleInRangePositions already ran and its results are held in memory.
+            for (uint256 i = 0; i < positionIds.length; i++) {
+                _deactivateIfDead(positionIds[i]);
+            }
         }
     }
 
