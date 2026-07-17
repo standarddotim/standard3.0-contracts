@@ -139,4 +139,66 @@ contract AdjustPositionTest is PoolBaseSetup {
         assertEq(p.quoteAmount, 100e18);
         assertEq(pmPool.activePositionsLength(), 1);
     }
+
+    function testSwapGasIsBoundedByLivePositionsNotHistory() public {
+        // The actual I2 symptom: every adjustPosition used to leak one permanently-active
+        // dead position that every future swap paid to scan (~20 passes x ~3 SLOADs each).
+        // With retirement + the activeIds index, swap gas after 50 adjust cycles must
+        // match swap gas after 1 -- bounded by LIVE positions, not history.
+        //
+        // The token3/token4 pair was listed inside THIS fixture's setUp, after
+        // PoolBaseSetup's one-time warp -- give it its own TWAP history or pmPool.swap
+        // reverts InsufficientHistory (same lesson as the swap plan's Task 16, point 1).
+        vm.warp(block.timestamp + 600);
+
+        token3.mint(trader1, 10000e18);
+        token4.mint(trader1, 10000e18);
+        vm.startPrank(trader1);
+        token3.approve(address(pmPool), type(uint256).max);
+        token4.approve(address(pmPool), type(uint256).max);
+        vm.stopPrank();
+        vm.startPrank(lp1);
+        token3.approve(address(pm), type(uint256).max);
+        token4.approve(address(pm), type(uint256).max);
+        vm.stopPrank();
+
+        _adjustCycle();
+        // Throwaway swap so both measurements below run against already-warm engine/
+        // orderbook/oracle storage -- otherwise measurement 1 pays EIP-2929 cold-access
+        // costs measurement 2 doesn't, and the comparison measures warmth, not the scan.
+        _swapOnce();
+
+        uint256 gasAfterOneCycle = _measureSwapGas();
+
+        for (uint256 i = 0; i < 49; i++) {
+            _adjustCycle();
+        }
+
+        uint256 gasAfterFiftyCycles = _measureSwapGas();
+
+        // 5% relative tolerance: on the pre-fix code the 49 extra dead positions cost the
+        // scan roughly 49 x 20 passes x ~3 warm SLOADs (~300k gas), far beyond 5% of a
+        // swap; on the fixed code the live set is identical in both measurements.
+        assertApproxEqRel(gasAfterFiftyCycles, gasAfterOneCycle, 0.05e18);
+    }
+
+    function _adjustCycle() internal {
+        // Same range/amounts every cycle: each adjust re-normalizes the position to
+        // 500e18/500e18, pulling any shortfall from lp1 and refunding any excess, so
+        // every measured swap runs against an identically-shaped live position.
+        vm.prank(lp1);
+        pm.adjustPosition(tokenId, 80e8, 120e8, 1000000, 500e18, 500e18);
+    }
+
+    function _swapOnce() internal {
+        vm.prank(trader1);
+        pmPool.swap(10e18, true, trader1, false);
+    }
+
+    function _measureSwapGas() internal returns (uint256) {
+        vm.prank(trader1);
+        uint256 before = gasleft();
+        pmPool.swap(10e18, true, trader1, false);
+        return before - gasleft();
+    }
 }
