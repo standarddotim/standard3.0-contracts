@@ -18,5 +18,6 @@ interface IPerpPool {
 
     function liquidate(bool isLong, uint32 positionId) external returns (address owner);
 
-    function getPosition(bool isLong, uint32 positionId) external view returns (FuturesPool.Position memory);
+    // function getPosition(bool isLong, uint32 positionId) external view returns (FuturesPool.Position memory);
+    // REMOVED: Task 1 - Will be reimplemented in Task 2+ with IPerpPool.Position struct
 }
