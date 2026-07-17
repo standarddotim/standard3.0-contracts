@@ -62,15 +62,24 @@ contract PositionManager is IPositionManager, ERC721Upgradeable, OwnableUpgradea
         uint256 oldPositionId = tp.positionId;
         address owner = ownerOf(tokenId);
 
-        // Settle fees owed under the old range first.
-        IPool(pool).collect(oldPositionId, owner);
-
-        // Remove all remaining principal from the old range, sending it to this contract
-        // so it can be re-supplied to the new range without an extra external transfer
-        // round-trip through the NFT owner.
+        // I2: the old position may already be retired (fully drained + fees collected)
+        // -- Pool.collect/removeLiquidity revert PositionDoesNotExist on a retired id, so
+        // only settle what is actually still live. Read the position FIRST: collect only
+        // zeroes fees, never balances, so the amounts read here are unaffected by the
+        // collect below. When the old position is retired, oldP's amounts are zero and
+        // the pull/refund arithmetic further down degenerates correctly to "pull the full
+        // new amounts from the owner".
         IPool.Position memory oldP = IPool(pool).getPosition(oldPositionId);
-        if (oldP.baseAmount > 0 || oldP.quoteAmount > 0) {
-            IPool(pool).removeLiquidity(oldPositionId, oldP.baseAmount, oldP.quoteAmount, address(this));
+        if (oldP.active) {
+            // Settle fees owed under the old range first.
+            IPool(pool).collect(oldPositionId, owner);
+
+            // Remove all remaining principal from the old range, sending it to this
+            // contract so it can be re-supplied to the new range without an extra
+            // external transfer round-trip through the NFT owner.
+            if (oldP.baseAmount > 0 || oldP.quoteAmount > 0) {
+                IPool(pool).removeLiquidity(oldPositionId, oldP.baseAmount, oldP.quoteAmount, address(this));
+            }
         }
 
         (address base, address quote) = IPool(pool).getBaseQuote();

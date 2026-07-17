@@ -92,4 +92,51 @@ contract AdjustPositionTest is PoolBaseSetup {
         assertEq(newP.baseAmount, 200e18);
         assertEq(newP.quoteAmount, 200e18);
     }
+
+    function testAdjustPositionRetiresAbandonedPosition() public {
+        // Invariant test (already passes once Task 1 lands -- adjustPosition's own
+        // collect + full-drain removeLiquidity trigger retirement with no PM change):
+        // the abandoned old id must retire, keeping the live count flat per adjust
+        // instead of leaking one dead position per call.
+        (, uint256 oldPositionId) = pm.tokenPosition(tokenId);
+        assertEq(pmPool.activePositionsLength(), 1);
+
+        vm.prank(lp1);
+        token3.approve(address(pm), 200e18);
+        vm.prank(lp1);
+        token4.approve(address(pm), 200e18);
+        vm.prank(lp1);
+        pm.adjustPosition(tokenId, 60e8, 140e8, 2000000, 700e18, 700e18);
+
+        assertFalse(pmPool.getPosition(oldPositionId).active);
+        assertEq(pmPool.activePositionsLength(), 1); // old retired, new added -- flat
+    }
+
+    function testAdjustPositionWorksAfterFullDrain() public {
+        // Fully drain via the PM -- with Task 1, the position retires (no fees pending;
+        // no swaps have happened in this test).
+        vm.prank(lp1);
+        pm.removeLiquidity(tokenId, 500e18, 500e18, lp1);
+        (, uint256 oldPositionId) = pm.tokenPosition(tokenId);
+        assertFalse(pmPool.getPosition(oldPositionId).active);
+        assertEq(pmPool.activePositionsLength(), 0);
+
+        // Unguarded adjustPosition calls Pool.collect unconditionally, which reverts
+        // PositionDoesNotExist on the retired id -- permanently bricking this token for
+        // adjustment. The guard skips settlement of a retired position and just creates
+        // the new one, pulling the full new amounts from the owner.
+        vm.prank(lp1);
+        token3.approve(address(pm), 100e18);
+        vm.prank(lp1);
+        token4.approve(address(pm), 100e18);
+        vm.prank(lp1);
+        pm.adjustPosition(tokenId, 60e8, 140e8, 2000000, 100e18, 100e18);
+
+        (, uint256 newPositionId) = pm.tokenPosition(tokenId);
+        IPool.Position memory p = pmPool.getPosition(newPositionId);
+        assertTrue(p.active);
+        assertEq(p.baseAmount, 100e18);
+        assertEq(p.quoteAmount, 100e18);
+        assertEq(pmPool.activePositionsLength(), 1);
+    }
 }
