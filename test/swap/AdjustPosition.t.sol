@@ -1,6 +1,7 @@
 // contracts/test/swap/AdjustPosition.t.sol
 pragma solidity >=0.8;
 
+import {ExchangeOrderbook} from "../../src/exchange/libraries/ExchangeOrderbook.sol";
 import {PoolBaseSetup} from "./PoolBaseSetup.sol";
 import {PositionManager} from "../../src/swap/PositionManager.sol";
 import {IPool} from "../../src/swap/interfaces/IPool.sol";
@@ -30,7 +31,7 @@ contract AdjustPositionTest is PoolBaseSetup {
         token3.mint(lp1, 10000e18);
         token4.mint(lp1, 10000e18);
 
-        matchingEngine.addPair(address(token3), address(token4), 100e8, 1, address(token3));
+        matchingEngine.addPair(address(token3), address(token4), 100e8, 1, address(token3), ExchangeOrderbook.MatchingMode.SizePriority);
         pmPool = Pool(poolFactory.getPool(address(token3), address(token4)));
 
         vm.prank(lp1);

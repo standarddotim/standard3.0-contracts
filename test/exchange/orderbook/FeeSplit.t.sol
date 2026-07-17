@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.24;
 
+import {ExchangeOrderbook} from "../../../src/exchange/libraries/ExchangeOrderbook.sol";
 import {BaseSetup} from "../OrderbookBaseSetup.sol";
 import {Orderbook} from "../../../src/exchange/orderbooks/Orderbook.sol";
 
 contract FeeSplitTest is BaseSetup {
     function testRegularTraderOrderFeeGoes100PercentToFeeToByDefault() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
 
         uint256 feeToBalanceBefore = token2.balanceOf(booker);
 
@@ -31,7 +32,7 @@ contract FeeSplitTest is BaseSetup {
 
     function testSetPoolFeeShareChangesSplitForPoolOwnedOrders() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         address pairAddr = matchingEngine.getPair(address(token1), address(token2));
 
         vm.prank(address(matchingEngine));

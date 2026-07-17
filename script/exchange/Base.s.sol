@@ -146,7 +146,7 @@ contract CreatePairMainnet is Deployer {
 
     function run() external {
         _setDeployer();
-        matchingEngine.addPair(base, quote, initMarketPrice, 0, base);
+        matchingEngine.addPair(base, quote, initMarketPrice, 0, base, ExchangeOrderbook.MatchingMode.SizePriority);
         vm.stopBroadcast();
     }
 }

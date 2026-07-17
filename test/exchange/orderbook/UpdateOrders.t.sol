@@ -34,7 +34,7 @@ contract LimitOrderTest is BaseSetup {
     // rematch order so that amount is changed from the exact order
     function testRematchOrderAmountIncrease() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(btc), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(btc), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         console.log("Base/Quote Pair: ", matchingEngine.getPair(address(token1), address(btc)));
         vm.prank(trader1);
         MatchingEngine.OrderResult memory ord0Result =
@@ -56,7 +56,7 @@ contract LimitOrderTest is BaseSetup {
 
     function testRematchOrderAmountDecrease() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(btc), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(btc), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         console.log("Base/Quote Pair: ", matchingEngine.getPair(address(token1), address(btc)));
         vm.prank(trader1);
         MatchingEngine.OrderResult memory ord0Result =
@@ -78,7 +78,7 @@ contract LimitOrderTest is BaseSetup {
     // rematch order so that price is changed from the exact order
     function testRematchOrderPrice() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(btc), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(btc), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         console.log("Base/Quote Pair: ", matchingEngine.getPair(address(token1), address(btc)));
         vm.prank(trader1);
         MatchingEngine.OrderResult memory ord0Result =
@@ -100,7 +100,7 @@ contract LimitOrderTest is BaseSetup {
 
     function testUpdateOrdersETH() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(weth), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(weth), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         console.log("Base/Quote Pair: ", matchingEngine.getPair(address(token1), address(weth)));
         vm.prank(trader1);
         MatchingEngine.OrderResult memory ord0Result =
@@ -122,9 +122,9 @@ contract LimitOrderTest is BaseSetup {
 
     function testCreateOrders() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(btc), 1e8, 0, address(token1));
-        matchingEngine.addPair(address(weth), address(btc), 1e8, 0, address(token1));
-        matchingEngine.addPair(address(btc), address(weth), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(btc), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
+        matchingEngine.addPair(address(weth), address(btc), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
+        matchingEngine.addPair(address(btc), address(weth), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         console.log("Base/Quote Pair: ", matchingEngine.getPair(address(token1), address(btc)));
         vm.prank(trader1);
         MatchingEngine.CreateOrderInput[] memory openOrders = new MatchingEngine.CreateOrderInput[](6);

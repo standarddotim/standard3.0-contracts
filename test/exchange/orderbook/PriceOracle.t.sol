@@ -1,6 +1,7 @@
 // contracts/test/exchange/orderbook/PriceOracle.t.sol
 pragma solidity >=0.8;
 
+import {ExchangeOrderbook} from "../../../src/exchange/libraries/ExchangeOrderbook.sol";
 import {BaseSetup} from "../OrderbookBaseSetup.sol";
 import {Orderbook} from "../../../src/exchange/orderbooks/Orderbook.sol";
 import {Oracle} from "../../../src/exchange/libraries/Oracle.sol";
@@ -12,7 +13,7 @@ import {Oracle} from "../../../src/exchange/libraries/Oracle.sol";
 contract PriceOracleTest is BaseSetup {
     function setUp() public override {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 100e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 100e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
     }
 

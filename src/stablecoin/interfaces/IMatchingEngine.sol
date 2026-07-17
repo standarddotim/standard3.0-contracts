@@ -3,6 +3,13 @@
 pragma solidity ^0.8.24;
 
 interface IMatchingEngine {
+    // Mirrors ExchangeOrderbook.MatchingMode (contracts/src/exchange/libraries/ExchangeOrderbook.sol)
+    // kept as a standalone declaration since this module doesn't depend on the exchange libraries.
+    enum MatchingMode {
+        SizePriority,
+        PriceTimePriority
+    }
+
     // admin functions
     function setFeeTo(address feeTo_) external returns (bool success);
     function setDefaultSpread(uint32 buy, uint32 sell) external returns (bool success);
@@ -57,7 +64,9 @@ interface IMatchingEngine {
         payable
         returns (uint256 makePrice, uint256 placed, uint32 id);
 
-    function addPair(address base, address quote, uint256 initMarketPrice) external returns (address book);
+    function addPair(address base, address quote, uint256 initMarketPrice, MatchingMode mode)
+        external
+        returns (address book);
 
     function cancelOrder(address base, address quote, bool isBid, uint32 orderId) external returns (uint256 refunded);
 

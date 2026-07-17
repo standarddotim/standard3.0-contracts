@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.24;
 
+import {ExchangeOrderbook} from "../../src/exchange/libraries/ExchangeOrderbook.sol";
 import {Test} from "forge-std/Test.sol";
 import {MatchingEngine} from "../../src/exchange/MatchingEngine.sol";
 import {OrderbookFactory} from "../../src/exchange/orderbooks/OrderbookFactory.sol";
@@ -86,7 +87,7 @@ contract PoolBaseSetup is Test {
         vm.prank(trader2);
         token2.approve(address(matchingEngine), 10000000e18);
 
-        matchingEngine.addPair(address(token1), address(token2), 100e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 100e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         // Advance past the TWAP oracle's minimum history window so Pool.swap's
         // Orderbook.twap(600) call (Task 10+) doesn't revert InsufficientHistory on a
         // freshly-listed pair. Hardcoded 600 rather than referencing Pool.TWAP_WINDOW so

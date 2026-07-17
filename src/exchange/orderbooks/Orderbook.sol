@@ -37,6 +37,7 @@ contract Orderbook is IOrderbook, Initializable {
     uint64 private decDiff;
     bool private baseBquote;
     address private pool;
+    ExchangeOrderbook.MatchingMode private matchingMode;
 
     ExchangeLinkedList.PriceLinkedList private priceLists;
     ExchangeOrderbook.OrderStorage private _askOrders;
@@ -64,7 +65,8 @@ contract Orderbook is IOrderbook, Initializable {
         uint256 id_,
         address base_,
         address quote_,
-        address engine_
+        address engine_,
+        ExchangeOrderbook.MatchingMode mode_
     ) external initializer {
         uint8 baseD = TransferHelper.decimals(base_);
         uint8 quoteD = TransferHelper.decimals(quote_);
@@ -75,7 +77,12 @@ contract Orderbook is IOrderbook, Initializable {
         decDiff = uint64(10 ** diff);
         baseBquote = baseBquote_;
         pair = Pair(id_, base_, quote_, engine_);
+        matchingMode = mode_;
         Oracle.initialize(observations, uint32(block.timestamp));
+    }
+
+    function getMatchingMode() external view returns (ExchangeOrderbook.MatchingMode) {
+        return matchingMode;
     }
 
     modifier onlyEngine() {
@@ -122,7 +129,7 @@ contract Orderbook is IOrderbook, Initializable {
         if (_askOrders._isEmpty(price)) {
             priceLists._insert(false, price);
         }
-        _askOrders._insertId(price, id, amount);
+        _askOrders._insertId(price, id, amount, matchingMode);
         return (id, foundDmt);
     }
 
@@ -138,7 +145,7 @@ contract Orderbook is IOrderbook, Initializable {
         if (_bidOrders._isEmpty(price)) {
             priceLists._insert(true, price);
         }
-        _bidOrders._insertId(price, id, amount);
+        _bidOrders._insertId(price, id, amount, matchingMode);
         return (id, foundDmt);
     }
 

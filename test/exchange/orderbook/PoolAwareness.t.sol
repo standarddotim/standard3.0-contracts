@@ -3,18 +3,19 @@ pragma solidity >=0.8;
 
 import {BaseSetup} from "../OrderbookBaseSetup.sol";
 import {Orderbook} from "../../../src/exchange/orderbooks/Orderbook.sol";
+import {ExchangeOrderbook} from "../../../src/exchange/libraries/ExchangeOrderbook.sol";
 
 contract PoolAwarenessTest is BaseSetup {
     function testPoolDefaultsToZeroAddress() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         address pairAddr = matchingEngine.getPair(address(token1), address(token2));
         assertEq(Orderbook(payable(pairAddr)).getPool(), address(0));
     }
 
     function testSetPoolOnlyCallableByEngine() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         address pairAddr = matchingEngine.getPair(address(token1), address(token2));
 
         vm.prank(trader1);
@@ -24,7 +25,7 @@ contract PoolAwarenessTest is BaseSetup {
 
     function testSetPoolByEngineSucceeds() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         address pairAddr = matchingEngine.getPair(address(token1), address(token2));
 
         // matchingEngine is the pair's `engine` (Orderbook.initialize's engine_ arg),
@@ -36,7 +37,7 @@ contract PoolAwarenessTest is BaseSetup {
 
     function testSetPoolRevertsOnSecondCall() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         address pairAddr = matchingEngine.getPair(address(token1), address(token2));
 
         vm.prank(address(matchingEngine));

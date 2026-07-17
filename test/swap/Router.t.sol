@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.24;
 
+import {ExchangeOrderbook} from "../../src/exchange/libraries/ExchangeOrderbook.sol";
 import {PoolBaseSetup} from "./PoolBaseSetup.sol";
 import {SwapRouter} from "../../src/swap/SwapRouter.sol";
 import {ISwapRouter} from "../../src/swap/interfaces/ISwapRouter.sol";
@@ -88,7 +89,7 @@ contract RouterTest is PoolBaseSetup {
         MockQuote token3 = new MockQuote("Quote2", "QUOTE2");
         token3.mint(lp1, 10000e18);
 
-        matchingEngine.addPair(address(token1), address(token3), 1e8, 1, address(token1));
+        matchingEngine.addPair(address(token1), address(token3), 1e8, 1, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         Pool secondPool = Pool(poolFactory.getPool(address(token1), address(token3)));
         // Advance past listing so Pool.swap's twap(TWAP_WINDOW) call (Task 10) has enough
         // oracle history for THIS pair too -- PoolBaseSetup's one-time warp in setUp() only
@@ -142,7 +143,7 @@ contract RouterTest is PoolBaseSetup {
         MockQuote token3 = new MockQuote("Quote2", "QUOTE2");
         token3.mint(lp1, 10000e18);
 
-        matchingEngine.addPair(address(token1), address(token3), 1e8, 1, address(token1));
+        matchingEngine.addPair(address(token1), address(token3), 1e8, 1, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         Pool secondPool = Pool(poolFactory.getPool(address(token1), address(token3)));
         // Advance past listing so Pool.swap's twap(TWAP_WINDOW) call (Task 10) has enough
         // oracle history for THIS pair too -- PoolBaseSetup's one-time warp in setUp() only

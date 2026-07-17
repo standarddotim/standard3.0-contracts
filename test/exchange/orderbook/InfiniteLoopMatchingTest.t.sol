@@ -33,7 +33,7 @@ contract InfiniteLoopMatchingTest is BaseSetup {
     function testBuyMatchesMultipleAskPriceLevels() public {
         super.setUp();
         // lmp = 50, spread = 2% → limitPrice for buy = 51
-        matchingEngine.addPair(address(token1), address(token2), 50, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 50, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
 
         // Place ask orders at two price levels within the spread
@@ -67,7 +67,7 @@ contract InfiniteLoopMatchingTest is BaseSetup {
     function testSellMatchesMultipleBidPriceLevels() public {
         super.setUp();
         // lmp = 50, spread = 2% → limitPrice floor for sell = 49
-        matchingEngine.addPair(address(token1), address(token2), 50, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 50, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
 
         // Place bid orders at two price levels at or above the spread floor.
@@ -102,7 +102,7 @@ contract InfiniteLoopMatchingTest is BaseSetup {
     // the prevI fix makes it safe on every iteration.
     function testNoInfiniteLoopOnMultiplePriceIterations() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 50, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 50, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
 
         // Three ask orders at three price levels (50, 51 are within limit; 52 is at the exact cap)

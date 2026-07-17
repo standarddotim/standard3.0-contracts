@@ -22,13 +22,13 @@ contract PairTest is BaseSetup {
         listed[0] = 1;
         listed[1] = 2;
         listed[2] = 3;
-        matchingEngine.addPair(address(token1), address(token2), 300000000, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 300000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
     }
 
     function testAddPairOnlyAllowedByAdmin() public {
         vm.prank(booker);
         vm.expectRevert();
-        matchingEngine.addPair(address(token1), address(token2), 300000000, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 300000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
     }
 
     function testUpdatePairOnlyAllowedByAdmin() public {
@@ -47,7 +47,7 @@ contract PairTest is BaseSetup {
         listed[0] = 1;
         listed[1] = 2;
         listed[2] = 3;
-        matchingEngine.addPair(address(token1), address(token2), 300000000, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 300000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
 
         uint32[] memory listed2 = new uint32[](2);
         listed2[0] = 2;

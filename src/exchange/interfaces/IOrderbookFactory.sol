@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.24;
 
+import {ExchangeOrderbook} from "../libraries/ExchangeOrderbook.sol";
+
 interface IOrderbookFactory {
     struct Pair {
         address base;
@@ -11,7 +13,9 @@ interface IOrderbookFactory {
 
     function impl() external view returns (address);
 
-    function createBook(address base_, address quote_) external returns (address pair);
+    function createBook(address base_, address quote_, ExchangeOrderbook.MatchingMode mode)
+        external
+        returns (address pair);
 
     function setListingCost(string memory terminal, address payment, uint256 amount) external returns (uint256);
 

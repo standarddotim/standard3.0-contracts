@@ -19,7 +19,7 @@ import {stdStorage, StdStorage, Test} from "forge-std/Test.sol";
 contract GetterTest is BaseSetup {
     function testGetPrices() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(booker);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
         vm.prank(trader1);
@@ -41,7 +41,7 @@ contract GetterTest is BaseSetup {
 
     function testGetPriceInsertion() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 100000000000, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 100000000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(booker);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
         vm.prank(trader1);
@@ -64,7 +64,7 @@ contract GetterTest is BaseSetup {
 
     function testGetOrders() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(booker);
 
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
@@ -82,7 +82,7 @@ contract GetterTest is BaseSetup {
 
     function testGetAskHead() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(trader1);
         // placeBid or placeAsk two of them is using the _insertId function it will revert
         // because the program will enter the "if (amount > self.orders[head].depositAmount)."
@@ -98,7 +98,7 @@ contract GetterTest is BaseSetup {
 
     function testGetOrderInsertion() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(trader1);
         // placeBid or placeAsk two of them is using the _insertId function it will revert
         // because the program will enter the "if (amount > self.orders[head].depositAmount)."

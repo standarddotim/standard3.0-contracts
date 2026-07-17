@@ -5,7 +5,15 @@ pragma solidity ^0.8.24;
 import {IMatchingEngine, ExchangeOrderbook} from "./IMatchingEngine.sol";
 
 interface IOrderbook {
-    function initialize(uint256 id_, address base_, address quote_, address engine_) external;
+    function initialize(
+        uint256 id_,
+        address base_,
+        address quote_,
+        address engine_,
+        ExchangeOrderbook.MatchingMode mode_
+    ) external;
+
+    function getMatchingMode() external view returns (ExchangeOrderbook.MatchingMode);
 
     function setLmp(uint256 price) external;
 

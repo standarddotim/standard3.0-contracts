@@ -5,6 +5,7 @@ import {stdStorage, StdStorage, Test} from "forge-std/Test.sol";
 import {Utils} from "../utils/Utils.sol";
 import {MatchingEngine} from "../../src/exchange/MatchingEngine.sol";
 import {OrderbookFactory} from "../../src/exchange/orderbooks/OrderbookFactory.sol";
+import {ExchangeOrderbook} from "../../src/exchange/libraries/ExchangeOrderbook.sol";
 import {MockToken} from "../../src/mock/MockToken.sol";
 import {Orderbook} from "../../src/exchange/orderbooks/Orderbook.sol";
 import {WETH9} from "../../src/mock/WETH9.sol";
@@ -71,9 +72,9 @@ contract PointFarmSetup is Test {
         base.mint(trader1, type(uint256).max);
         usdc.mint(trader1, type(uint256).max);
         // make a price in matching engine where 1 base = 1 quote with buy and sell order
-        matchingEngine.addPair(address(base), address(usdc), 341320000000, 0, address(base));
+        matchingEngine.addPair(address(base), address(usdc), 341320000000, 0, address(base), ExchangeOrderbook.MatchingMode.SizePriority);
         // make a price in matching engine where 1 feeToken = 1000 stablecoin with buy and sell order
-        matchingEngine.addPair(address(feeToken), address(stablecoin), 10000e8, 0, address(feeToken));
+        matchingEngine.addPair(address(feeToken), address(stablecoin), 10000e8, 0, address(feeToken), ExchangeOrderbook.MatchingMode.SizePriority);
 
         point = new STNDXP();
         pointFarm = new PointFarm();

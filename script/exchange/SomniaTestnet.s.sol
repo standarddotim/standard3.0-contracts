@@ -132,7 +132,8 @@ contract AddPair is Deployer {
             address(0x0ED782B8079529f7385c3eDA9fAf1EaA0DbC6a17),
             9600000000000,
             0,
-            address(0x54597df4E4A6385B77F39d458Eb75443A8f9Aa9e)
+            address(0x54597df4E4A6385B77F39d458Eb75443A8f9Aa9e),
+            ExchangeOrderbook.MatchingMode.SizePriority
         );
         vm.stopBroadcast();
     }
@@ -286,7 +287,7 @@ contract CreatePairMainnet is Deployer {
 
     function run() external {
         _setDeployer();
-        matchingEngine.addPair(base, quote, initMarketPrice, 0, base);
+        matchingEngine.addPair(base, quote, initMarketPrice, 0, base, ExchangeOrderbook.MatchingMode.SizePriority);
         vm.stopBroadcast();
     }
 }
@@ -333,7 +334,7 @@ contract AddPair is Deployer {
     function run() external {
         _setDeployer();
         matchingEngine = MatchingEngine(payable(address(matchingEngine_address)));
-        matchingEngine.addPair(base, quote, price, 0, base);
+        matchingEngine.addPair(base, quote, price, 0, base, ExchangeOrderbook.MatchingMode.SizePriority);
         vm.stopBroadcast();
     }
 }
@@ -349,7 +350,7 @@ contract SetupPriceOnPair is Deployer {
     function run() external {
         _setDeployer();
         matchingEngine = MatchingEngine(payable(address(matchingEngine_address)));
-        matchingEngine.addPair(base, quote, price, 0, base);
+        matchingEngine.addPair(base, quote, price, 0, base, ExchangeOrderbook.MatchingMode.SizePriority);
         vm.stopBroadcast();
     }
 }

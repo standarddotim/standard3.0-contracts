@@ -24,7 +24,7 @@ contract LoopOutOfGasTest is BaseSetup {
     // only the bid at price=1 (below cap) creates a second distinct price level.
     function testExchangeLinkedListOutOfGas() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 2, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 2, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
 
         vm.prank(booker);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
@@ -50,7 +50,7 @@ contract LoopOutOfGasTest is BaseSetup {
     // causing infinite loops when inserting a price above two existing nodes.
     function testExchangeLinkedListOutOfGasPlaceBid() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 2, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 2, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(booker);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
 
@@ -76,7 +76,7 @@ contract LoopOutOfGasTest is BaseSetup {
     // With lmp=5 and spread=2%, asks below floor=(5*0.98)=4 are raised to 4.
     function testExchangeOrderbookOutOfGas() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 5, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 5, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(booker);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
 
@@ -98,7 +98,7 @@ contract LoopOutOfGasTest is BaseSetup {
     function testDeleteRemovesNonHeadBidPrice() public {
         super.setUp();
         // listingPrice=10: spread cap = 10 * 1.02 = 10; bids at 10, 9, 8 all stay distinct.
-        matchingEngine.addPair(address(token1), address(token2), 10, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 10, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(booker);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
 
@@ -133,7 +133,7 @@ contract LoopOutOfGasTest is BaseSetup {
     function testDeleteRemovesNonHeadAskPrice() public {
         super.setUp();
         // listingPrice=2: spread floor = 2 * 0.98 = 1; asks at 2, 5, 10 all stay distinct.
-        matchingEngine.addPair(address(token1), address(token2), 2, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 2, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(booker);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
 

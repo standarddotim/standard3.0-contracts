@@ -9,6 +9,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {MockOrderbook, IOrderbook} from "./MockOrderbook.sol";
 import {CloneFactory} from "../libraries/CloneFactory.sol";
 import {IOrderbookFactory} from "../interfaces/IOrderbookFactory.sol";
+import {ExchangeOrderbook} from "../libraries/ExchangeOrderbook.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 interface IERC20 {
@@ -33,7 +34,11 @@ contract MockOrderbookFactory is IOrderbookFactory, Initializable {
 
     constructor() {}
 
-    function createBook(address base_, address quote_) external override returns (address orderbook) {
+    function createBook(address base_, address quote_, ExchangeOrderbook.MatchingMode mode)
+        external
+        override
+        returns (address orderbook)
+    {
         if (msg.sender != engine) {
             revert InvalidAccess(msg.sender, engine);
         }
@@ -56,7 +61,7 @@ contract MockOrderbookFactory is IOrderbookFactory, Initializable {
         }
 
         address proxy = CloneFactory._createCloneWithSalt(impl, _getSalt(base_, quote_));
-        IOrderbook(proxy).initialize(allPairsLength(), base_, quote_, engine);
+        IOrderbook(proxy).initialize(allPairsLength(), base_, quote_, engine, mode);
         allPairs.push(proxy);
         return (proxy);
     }

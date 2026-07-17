@@ -3,6 +3,14 @@
 pragma solidity ^0.8.24;
 
 library ExchangeOrderbook {
+    // Matching discipline applied within a single price level.
+    // SizePriority: existing behavior — largest resting depositAmount fills first.
+    // PriceTimePriority: strict FIFO — earliest-placed resting order fills first.
+    enum MatchingMode {
+        SizePriority,
+        PriceTimePriority
+    }
+
     // Order struct
     struct Order {
         address owner;
@@ -18,6 +26,8 @@ library ExchangeOrderbook {
         mapping(uint32 => Order) orders;
         // Head of the linked list(i.e. lowest ask price / highest bid price)
         mapping(uint256 => uint32) head;
+        // Tail of the linked list, maintained for O(1) FIFO append under PriceTimePriority
+        mapping(uint256 => uint32) tail;
         // count of the orders, used for array allocation
         uint32 count;
         address engine;
@@ -28,7 +38,13 @@ library ExchangeOrderbook {
     error PriceIsZero(uint256 price);
 
     // for orders, lower depositAmount are next, higher depositAmount comes first
-    function _insertId(OrderStorage storage self, uint256 price, uint32 id, uint256 amount) internal {
+    function _insertId(OrderStorage storage self, uint256 price, uint32 id, uint256 amount, MatchingMode mode)
+        internal
+    {
+        if (mode == MatchingMode.PriceTimePriority) {
+            _insertFifo(self, price, id);
+            return;
+        }
         uint32 last = 0;
         uint32 head = self.head[price];
         mapping(uint32 => uint32) storage list = self.list[price];
@@ -70,6 +86,17 @@ library ExchangeOrderbook {
         }
     }
 
+    // append order to the tail of the linked list (FIFO / price-time priority)
+    function _insertFifo(OrderStorage storage self, uint256 price, uint32 id) private {
+        uint32 tail = self.tail[price];
+        if (tail == 0) {
+            self.head[price] = id;
+        } else {
+            self.list[price][tail] = id;
+        }
+        self.tail[price] = id;
+    }
+
     // pop front
     function _fpop(OrderStorage storage self, uint256 price) internal returns (uint256) {
         uint32 first = self.head[price];
@@ -79,6 +106,9 @@ library ExchangeOrderbook {
         uint32 next = self.list[price][first];
         self.head[price] = next;
         delete self.list[price][first];
+        if (self.tail[price] == first) {
+            self.tail[price] = 0;
+        }
         return first;
     }
 
@@ -128,11 +158,15 @@ library ExchangeOrderbook {
         uint32 last = 0;
         uint32 head = self.head[price];
         uint32 next;
+        bool wasTail = self.tail[price] == id;
         mapping(uint32 => uint32) storage list = self.list[price];
         // delete id in the order linked list
         if (head == id) {
             self.head[price] = list[head];
             delete list[id];
+            if (wasTail) {
+                self.tail[price] = 0;
+            }
         } else {
             // search for the order id in the linked list
             while (head != 0) {
@@ -140,6 +174,9 @@ library ExchangeOrderbook {
                 if (next == id) {
                     list[head] = list[next];
                     delete list[id];
+                    if (wasTail) {
+                        self.tail[price] = head;
+                    }
                     break;
                 }
                 last = head;

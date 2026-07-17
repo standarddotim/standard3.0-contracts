@@ -170,14 +170,22 @@ interface IMatchingEngine {
         payable
         returns (OrderResult memory result);
 
-    function addPair(address base, address quote, uint256 listingPrice, uint256 listingDate, address payment)
-        external
-        returns (address pair);
+    function addPair(
+        address base,
+        address quote,
+        uint256 listingPrice,
+        uint256 listingDate,
+        address payment,
+        ExchangeOrderbook.MatchingMode mode
+    ) external returns (address pair);
 
-    function addPairETH(address base, address quote, uint256 listingPrice, uint256 listingDate)
-        external
-        payable
-        returns (address book);
+    function addPairETH(
+        address base,
+        address quote,
+        uint256 listingPrice,
+        uint256 listingDate,
+        ExchangeOrderbook.MatchingMode mode
+    ) external payable returns (address book);
 
     function createOrder(CreateOrderInput memory createOrderData)
         external

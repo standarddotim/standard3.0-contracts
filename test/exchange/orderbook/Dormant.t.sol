@@ -15,7 +15,7 @@ contract DormantTest is MockBaseSetup {
         token2.approve(address(matchingEngine), 100000000000000000);
         token1.mint(address(this), 1000000000000000000000000000000);
         token2.mint(address(this), 1000000000000000000000000000000);
-        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         address pair = matchingEngine.getPair(address(token1), address(token2));
         MockOrderbook mockBook = MockOrderbook(payable(pair));
         mockBook.setOrderCount(true, 1);
@@ -29,7 +29,7 @@ contract DormantTest is MockBaseSetup {
         token2.approve(address(matchingEngine), 100000000000000000);
         token1.mint(address(this), 1000000000000000000000000000000);
         token2.mint(address(this), 1000000000000000000000000000000);
-        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 100000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         address pair = matchingEngine.getPair(address(token1), address(token2));
         MockOrderbook mockBook = MockOrderbook(payable(pair));
         mockBook.setOrderCount(true, 1);

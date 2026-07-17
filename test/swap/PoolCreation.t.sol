@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.24;
 
+import {ExchangeOrderbook} from "../../src/exchange/libraries/ExchangeOrderbook.sol";
 import {BaseSetup} from "../exchange/OrderbookBaseSetup.sol";
 import {Orderbook} from "../../src/exchange/orderbooks/Orderbook.sol";
 import {PoolFactory} from "../../src/swap/PoolFactory.sol";
@@ -21,7 +22,7 @@ contract PoolCreationTest is BaseSetup {
         super.setUp();
         _deployPoolFactory();
 
-        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
 
         address orderbookAddr = matchingEngine.getPair(address(token1), address(token2));
         assertTrue(orderbookAddr != address(0));

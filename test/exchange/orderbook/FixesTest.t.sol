@@ -34,7 +34,7 @@ contract FixesTest is BaseSetup {
     function testDeleteOrderNonHeadNoUint16Overflow() public {
         super.setUp();
         // lmp=10; ask floor = 10 * 0.98 = 9.8 -> 9; price=10 is valid
-        matchingEngine.addPair(address(token1), address(token2), 10, 0, address(feeToken));
+        matchingEngine.addPair(address(token1), address(token2), 10, 0, address(feeToken), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(booker);
         book = Orderbook(payable(orderbookFactory.getPair(address(token1), address(token2))));
 
@@ -100,7 +100,7 @@ contract FixesTest is BaseSetup {
     function testFpopDustOrderRefundsMakerAndClearsPrice() public {
         super.setUp();
         // btc (8 dec) as base, token1 (18 dec) as quote, lmp=1
-        matchingEngine.addPair(address(btc), address(token1), 1, 0, address(feeToken));
+        matchingEngine.addPair(address(btc), address(token1), 1, 0, address(feeToken), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(booker);
         book = Orderbook(payable(orderbookFactory.getPair(address(btc), address(token1))));
 

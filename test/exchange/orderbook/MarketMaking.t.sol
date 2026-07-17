@@ -22,7 +22,7 @@ contract MarketMaking is BaseSetup {
 
     function testMarketMakingOnSellSide() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 90e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 90e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(trader1);
         matchingEngine.limitSell(address(token1), address(token2), 90e8, 100e18, true, 2, trader1);
         vm.prank(trader1);
@@ -40,7 +40,7 @@ contract MarketMaking is BaseSetup {
 
     function testMarketMakingOnBuySide() public {
         super.setUp();
-        matchingEngine.addPair(address(token1), address(token2), 90e8, 0, address(token1));
+        matchingEngine.addPair(address(token1), address(token2), 90e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(trader1);
         matchingEngine.limitSell(address(token1), address(token2), 90e8, 100e18, true, 2, trader1);
         vm.prank(trader1);

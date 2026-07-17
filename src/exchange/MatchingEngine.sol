@@ -1143,10 +1143,11 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         address base,
         address quote,
         uint256 listingPrice,
-        uint256 listingDate
+        uint256 listingDate,
+        ExchangeOrderbook.MatchingMode mode
     ) external payable override returns (address book) {
         IWETH(WETH).deposit{value: msg.value}();
-        return addPair(base, quote, listingPrice, listingDate, WETH);
+        return addPair(base, quote, listingPrice, listingDate, WETH, mode);
     }
 
     /**
@@ -1162,12 +1163,13 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         address quote,
         uint256 listingPrice,
         uint256 listingDate,
-        address payment
+        address payment,
+        ExchangeOrderbook.MatchingMode mode
     ) public override returns (address pair) {
         string memory terminalName = _listingDeposit(payment, msg.sender);
 
         // create orderbook for the pair
-        pair = IOrderbookFactory(orderbookFactory).createBook(base, quote);
+        pair = IOrderbookFactory(orderbookFactory).createBook(base, quote, mode);
         IOrderbook(pair).setLmp(listingPrice);
         // Skip Pool creation for a WETH-linked pair -- Orderbook._sendFunds unconditionally
         // unwraps WETH to native ETH on settlement, which Pool.swap's ERC20-balance-delta
