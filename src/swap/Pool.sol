@@ -386,8 +386,8 @@ contract Pool is IPool, Initializable {
         uint32 count = 0;
         minSlippage = type(uint32).max;
 
-        // I2 fix: iterate only live positions -- one storage read of the id list up
-        // front, then 20 selection passes over memory. Both the scan and the scratch
+        // I2 fix: iterate only live positions -- one up-front storage copy of the id
+        // list (one SLOAD per element), then 20 selection passes over memory. Both the scan and the scratch
         // buffer are sized by the LIVE count; the old `1..nextPositionId` loop and its
         // `new bool[](nextPositionId + 1)` buffer each grew forever with dead history.
         // Tie-break nuance vs the old code: positions are visited in activeIds order
@@ -491,6 +491,9 @@ contract Pool is IPool, Initializable {
             p.active = false;
             uint256 idx = idxInActive[positionId];
             uint256 lastId = activeIds[activeIds.length - 1];
+            // When retiring the last (or only) element, lastId == positionId and these
+            // two writes are intentional self-assign no-ops -- correct because the
+            // delete below runs after them. Do not "simplify" by branching on idx.
             activeIds[idx] = lastId;
             idxInActive[lastId] = idx;
             activeIds.pop();

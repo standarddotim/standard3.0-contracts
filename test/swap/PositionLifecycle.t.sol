@@ -82,6 +82,8 @@ contract PositionLifecycleTest is Test {
         assertTrue(pool.getPosition(id).active); // fees pending -> NOT retired
         assertEq(pool.activePositionsLength(), 1);
 
+        vm.expectEmit(true, false, false, false);
+        emit IPool.PositionDeactivated(id);
         vm.prank(positionManager);
         pool.collect(id, lp);
         assertFalse(pool.getPosition(id).active); // fees settled -> retired
