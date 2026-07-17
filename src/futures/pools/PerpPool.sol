@@ -44,6 +44,9 @@ contract PerpPool is IPerpPool, Initializable {
     uint256 public longOpenInterest;
     uint256 public shortOpenInterest;
 
+    uint32 public liquidationFeeBps; // default 0 -- no explicit clearance fee, matches Hyperliquid
+    address public liquidationFeeRecipient;
+
     event PositionOpened(
         uint256 indexed positionId, address indexed trader, bool isLong, uint256 entryPrice, uint256 margin, uint32 leverage
     );
@@ -232,8 +235,65 @@ contract PerpPool is IPerpPool, Initializable {
         return (pnl, payoutInCollateral);
     }
 
-    function liquidate(uint256 positionId) external returns (uint256 feeFund, uint256 poolFund) {
-        revert("PerpPool: not yet implemented, see Task 6");
+    function setLiquidationFeeBps(uint32 bps) external onlyPerpEngine {
+        liquidationFeeBps = bps;
+    }
+
+    function setLiquidationFeeRecipient(address recipient) external onlyPerpEngine {
+        liquidationFeeRecipient = recipient;
+    }
+
+    // Liquidation is intentionally permissionless (like Hyperliquid's book-close stage and
+    // backstop vault, neither of which require a privileged caller) -- anyone can trigger it
+    // once a position is actually eligible; _isLiquidatable is what gates it, not msg.sender.
+    function liquidate(uint256 positionId) external override returns (uint256 feeFund, uint256 poolFund) {
+        Position memory position = positions[positionId];
+        if (position.owner == address(0)) {
+            revert PositionNotFound(positionId);
+        }
+
+        uint256 markPrice = IMatchingEnginePrice(market.matchingEngine).mktPrice(market.base, market.quote);
+        if (markPrice == 0) {
+            revert PriceIsZero(markPrice);
+        }
+
+        bool liquidatable = FuturesPool._isLiquidatable(
+            position.margin, position.entryPrice, position.leverage, markPrice, position.isLong, maxLeverage
+        );
+        if (!liquidatable) {
+            revert NotLiquidatable(positionId);
+        }
+
+        (feeFund, poolFund) = FuturesPool._liquidationSplit(position.margin, liquidationFeeBps);
+
+        uint256 notional = position.margin * position.leverage;
+        if (position.isLong) {
+            longOpenInterest -= notional;
+        } else {
+            shortOpenInterest -= notional;
+        }
+
+        delete positions[positionId];
+
+        // feeFund and poolFund are quote-denominated (position.margin already is); convert to
+        // the position's actual collateral token for both the fee payout and the reserve debit.
+        uint256 feeFundInCollateral = _fromQuoteValue(position.collateralToken, feeFund);
+        uint256 poolFundInCollateral = _fromQuoteValue(position.collateralToken, poolFund);
+
+        // poolFund was already sitting in reserveOf[collateralToken] from the original deposit
+        // at open -- liquidation just keeps it there instead of paying it out to the trader.
+        // Deviation from a naive "always decrement by feeFund" approach: only touch reserveOf
+        // (and transfer) when a real fee recipient is configured. If none is set, the fee
+        // portion simply stays in the reserve as extra pool backing (economically identical to
+        // poolFund) -- decrementing reserveOf here with no matching transfer would silently
+        // strand tokens the pool's own accounting no longer counts.
+        if (feeFundInCollateral > 0 && liquidationFeeRecipient != address(0)) {
+            reserveOf[position.collateralToken] -= feeFundInCollateral;
+            TransferHelper.safeTransfer(position.collateralToken, liquidationFeeRecipient, feeFundInCollateral);
+        }
+
+        emit PositionLiquidated(positionId, position.owner, markPrice, feeFundInCollateral, poolFundInCollateral);
+        return (feeFundInCollateral, poolFundInCollateral);
     }
 
     // --- internal helpers shared by Tasks 4-6 ---
