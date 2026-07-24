@@ -186,4 +186,43 @@ contract LimitOrderTest is BaseSetup {
             console.log("Order Result: ", orderResults[i].makePrice, orderResults[i].placed, orderResults[i].id);
         }
     }
+
+    // Batch updateOrders must not be all-or-nothing: an order that is already
+    // gone (filled/cancelled between submission and execution) is skipped, not
+    // reverted, and the remaining valid updates still apply. The gone order is
+    // also NOT recreated (no duplicate order), so its result id is 0.
+    function testUpdateOrdersToleratesGoneOrder() public {
+        super.setUp();
+        matchingEngine.addPair(address(token1), address(btc), 1e8, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
+        vm.prank(trader1);
+        MatchingEngine.OrderResult memory ord0 =
+            matchingEngine.limitBuy(address(token1), address(btc), 1e8, 1e8, true, 2, trader1);
+
+        MatchingEngine.CreateOrderInput[] memory data = new MatchingEngine.CreateOrderInput[](2);
+        // [0] valid update of the resting order
+        data[0].base = address(token1);
+        data[0].quote = address(btc);
+        data[0].isBid = true;
+        data[0].isLimit = true;
+        data[0].orderId = ord0.id;
+        data[0].price = 1e8;
+        data[0].amount = 1e10;
+        data[0].n = 2;
+        data[0].recipient = trader1;
+        // [1] nonexistent/gone order -> must be skipped, not revert the batch
+        data[1].base = address(token1);
+        data[1].quote = address(btc);
+        data[1].isBid = true;
+        data[1].isLimit = true;
+        data[1].orderId = 999;
+        data[1].price = 1e8;
+        data[1].amount = 1e10;
+        data[1].n = 2;
+        data[1].recipient = trader1;
+
+        vm.prank(trader1);
+        MatchingEngine.OrderResult[] memory results = matchingEngine.updateOrders(data);
+        assert(results[0].id > 0); // valid update recreated a resting order
+        assert(results[1].id == 0); // gone order skipped, not recreated
+    }
 }

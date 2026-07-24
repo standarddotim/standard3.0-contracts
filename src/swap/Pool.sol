@@ -434,7 +434,19 @@ contract Pool is IPool, Initializable {
         for (uint256 t = 0; t < nTiers; t++) {
             uint256 unmatched = 0;
             if (ctx.tierOrderIds[t] > 0) {
-                unmatched = IMatchingEngine(engine).cancelOrder(base, quote, !quoteToBase, ctx.tierOrderIds[t]);
+                // Self-cancel each tier leg to reclaim its unmatched remainder.
+                // A leg that fully matched no longer exists, so the strict
+                // single-order `cancelOrder` reverts (OrderCancelFailed) for it;
+                // the pool owns these orders, so that revert can only mean "leg
+                // fully consumed", which is a normal settlement outcome. Tolerate
+                // it here (unmatched = 0) instead of letting it revert the whole
+                // swap -- the strict revert stays in force for outside callers.
+                try IMatchingEngine(engine).cancelOrder(base, quote, !quoteToBase, ctx.tierOrderIds[t])
+                returns (uint256 u) {
+                    unmatched = u;
+                } catch {
+                    unmatched = 0;
+                }
             }
             ts.matched[t] = ctx.tierAmounts[t] - unmatched;
             ts.totalMatched += ts.matched[t];

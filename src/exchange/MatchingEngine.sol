@@ -83,6 +83,20 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         uint256 amount
     );
 
+    /**
+     * @dev Emitted when a cancel inside a tolerant batch (`cancelOrders`) fails.
+     * The failure is surfaced as an event with its revert reason instead of
+     * being masked as a silent zero refund, so batch callers can still see
+     * which orders could not be cancelled and why.
+     */
+    event OrderCancelSkipped(
+        address pair,
+        uint256 id,
+        bool isBid,
+        address indexed owner,
+        bytes reason
+    );
+
     event NewMarketPrice(address pair, uint256 price, bool isBid);
     event ListingCostSet(address payment, uint256 amount);
 
@@ -153,6 +167,14 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     error AmountIsZero();
     error FactoryNotInitialized(address factory);
     error AlreadyInitialized(bool init);
+    error PoolFeeShareExceedsDenom(uint32 poolFeeShare, uint256 denom);
+    error OrderCancelFailed(
+        address orderbook,
+        uint32 orderId,
+        bool isBid,
+        address sender,
+        bytes reason
+    );
 
     receive() external payable {
         assert(msg.sender == WETH); // only accept ETH via fallback from the WETH contract
@@ -231,7 +253,9 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     function setPoolFeeShare(
         uint32 poolFeeShare_
     ) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool success) {
-        require(poolFeeShare_ <= DENOM, "poolFeeShare exceeds DENOM");
+        if (poolFeeShare_ > DENOM) {
+            revert PoolFeeShareExceedsDenom(poolFeeShare_, DENOM);
+        }
         poolFeeShare = poolFeeShare_;
         return true;
     }
@@ -1233,13 +1257,26 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         return pair;
     }
 
+    /**
+     * @dev Cancels a single order on its orderbook.
+     * @param tolerant When false (single cancels and single order updates) any
+     * failure reverts with {OrderCancelFailed} so the caller learns why the
+     * cancel failed instead of receiving a silent zero. When true (batch cancels
+     * and batch updates) the failure is surfaced via {OrderCancelSkipped} and
+     * the item is skipped, so one bad order does not revert the whole batch.
+     * @return refunded Amount refunded from the cancelled order (0 when skipped).
+     * @return canceled True if the order was actually cancelled; false only in
+     * tolerant mode when the cancel failed (e.g. the order was already filled).
+     * Callers must not act on a refund when this is false.
+     */
     function _cancelOrder(
         address base,
         address quote,
         bool isBid,
         uint32 orderId,
-        address sender
-    ) internal returns (uint256) {
+        address sender,
+        bool tolerant
+    ) internal returns (uint256 refunded, bool canceled) {
         address orderbook = IOrderbookFactory(orderbookFactory).getPair(
             base,
             quote
@@ -1249,12 +1286,16 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
             revert InvalidPair(base, quote, orderbook);
         }
         try IOrderbook(orderbook).cancelOrder(isBid, orderId, sender) returns (
-            uint256 refunded
+            uint256 _refunded
         ) {
-            emit OrderCanceled(orderbook, orderId, isBid, sender, refunded);
-            return refunded;
-        } catch {
-            return 0;
+            emit OrderCanceled(orderbook, orderId, isBid, sender, _refunded);
+            return (_refunded, true);
+        } catch (bytes memory reason) {
+            if (tolerant) {
+                emit OrderCancelSkipped(orderbook, orderId, isBid, sender, reason);
+                return (0, false);
+            }
+            revert OrderCancelFailed(orderbook, orderId, isBid, sender, reason);
         }
     }
 
@@ -1360,7 +1401,8 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     }
 
     function _updateOrder(
-        CreateOrderInput memory updateOrderData
+        CreateOrderInput memory updateOrderData,
+        bool tolerant
     ) internal returns (OrderResult memory result) {
         address orderbook = IOrderbookFactory(orderbookFactory).getPair(
             updateOrderData.base,
@@ -1375,13 +1417,24 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
             );
         }
 
-        _cancelOrder(
+        // Cancel the existing order first. In non-tolerant (single) mode a failed
+        // cancel reverts. In tolerant (batch) mode it returns canceled == false;
+        // we must then skip recreating so one already-filled order neither
+        // reverts the whole batch nor leaves a duplicate order behind.
+        (, bool canceled) = _cancelOrder(
             updateOrderData.base,
             updateOrderData.quote,
             updateOrderData.isBid,
             updateOrderData.orderId,
-            _msgSender()
+            _msgSender(),
+            tolerant
         );
+        if (!canceled) {
+            result.makePrice = 0;
+            result.placed = 0;
+            result.id = 0;
+            return result;
+        }
 
         if (updateOrderData.amount == 0) {
             result.makePrice = 0;
@@ -1401,7 +1454,7 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     function updateOrder(
         CreateOrderInput memory updateOrderData
     ) external nonReentrant returns (OrderResult memory result) {
-        return _updateOrder(updateOrderData);
+        return _updateOrder(updateOrderData, false);
     }
 
     function updateOrders(
@@ -1409,7 +1462,9 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     ) external payable returns (OrderResult[] memory results) {
         results = new OrderResult[](updateOrderData.length);
         for (uint32 i = 0; i < updateOrderData.length; i++) {
-            results[i] = _updateOrder(updateOrderData[i]);
+            // tolerant: an order that was already filled between submission and
+            // execution is skipped, not reverted, so the rest of the batch runs.
+            results[i] = _updateOrder(updateOrderData[i], true);
         }
         return results;
     }
@@ -1428,7 +1483,15 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         bool isBid,
         uint32 orderId
     ) public nonReentrant returns (uint256) {
-        return _cancelOrder(base, quote, isBid, orderId, _msgSender());
+        (uint256 refunded, ) = _cancelOrder(
+            base,
+            quote,
+            isBid,
+            orderId,
+            _msgSender(),
+            false
+        );
+        return refunded;
     }
 
     function cancelOrders(
@@ -1436,12 +1499,13 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
     ) external returns (uint256[] memory refunded) {
         refunded = new uint256[](cancelOrderData.length);
         for (uint32 i = 0; i < cancelOrderData.length; i++) {
-            refunded[i] = _cancelOrder(
+            (refunded[i], ) = _cancelOrder(
                 cancelOrderData[i].base,
                 cancelOrderData[i].quote,
                 cancelOrderData[i].isBid,
                 cancelOrderData[i].orderId,
-                _msgSender()
+                _msgSender(),
+                true
             );
         }
         return refunded;
@@ -1520,7 +1584,7 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
      * @param isBid if true, amount is quote asset, otherwise base asset
      * @return converted converted amount from base to quote or vice versa.
      * if true, amount is quote asset, otherwise base asset
-     * if orderbook does not exist, return 0
+     * reverts with PairDoesNotExist if the orderbook does not exist
      */
     function convert(
         address base,
@@ -1532,7 +1596,11 @@ contract MatchingEngine is ReentrancyGuard, AccessControl, IMatchingEngine {
         if (base == quote) {
             return amount;
         } else if (orderbook == address(0)) {
-            return 0;
+            // Previously returned 0, which silently masked a missing pair:
+            // an estimate would look like a legitimate "you receive 0" on the
+            // UI instead of surfacing that the pair does not exist. Revert so
+            // the error is visible to callers estimating a transaction.
+            revert PairDoesNotExist(base, quote, orderbook);
         } else {
             return IOrderbook(orderbook).assetValue(amount, isBid);
         }

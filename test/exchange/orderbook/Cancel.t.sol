@@ -29,6 +29,32 @@ contract CancelTest is BaseSetup {
         vm.prank(trader1);
     }
 
+    // A single cancel of a non-existent order must not silently return 0:
+    // the underlying revert is surfaced as an explanatory OrderCancelFailed.
+    function testCancelNonexistentOrderReverts() public {
+        matchingEngine.addPair(address(token1), address(token2), 300000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
+        vm.prank(trader1);
+        vm.expectPartialRevert(MatchingEngine.OrderCancelFailed.selector);
+        matchingEngine.cancelOrder(address(token1), address(token2), false, 999);
+    }
+
+    // Batch cancels stay tolerant: a bad order is skipped (returns 0) instead
+    // of reverting the whole batch, while the good order is still cancelled.
+    function testCancelOrdersTolerantSkipsBadOrder() public {
+        matchingEngine.addPair(address(token1), address(token2), 300000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
+        vm.prank(trader1);
+        matchingEngine.limitSell(address(token1), address(token2), 500000000, 10, true, 2, trader1);
+
+        IMatchingEngine.CancelOrderInput[] memory data = new IMatchingEngine.CancelOrderInput[](2);
+        data[0] = IMatchingEngine.CancelOrderInput({base: address(token1), quote: address(token2), isBid: false, orderId: 1});
+        data[1] = IMatchingEngine.CancelOrderInput({base: address(token1), quote: address(token2), isBid: false, orderId: 999});
+
+        vm.prank(trader1);
+        uint256[] memory refunded = matchingEngine.cancelOrders(data);
+        assert(refunded[0] > 0); // good order cancelled
+        assert(refunded[1] == 0); // bad order skipped, not reverted
+    }
+
     function testCancelAtPriceZeroPasses() public {
         matchingEngine.addPair(address(token1), address(token2), 300000000, 0, address(token1), ExchangeOrderbook.MatchingMode.SizePriority);
         vm.prank(booker);
